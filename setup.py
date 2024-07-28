@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='dynamic-manim-components',
-    version='0.1.0',
+    version='0.1.1',
     description='A ManimCE component library, supporting component composition and automatic animation',
     author='Philip Murray',
     author_email='philipmurray.code@gmail.com',
@@ -10,7 +10,7 @@ setup(
     packages=find_packages(where='dynamic_manim_components'),
     package_dir={'': 'dynamic_manim_components'},
     install_requires=[
-        'manim>=18.1.0', 
+        'manim>=0.18.1', 
     ],
     classifiers=[
         'Programming Language :: Python :: 3',
