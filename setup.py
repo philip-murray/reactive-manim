@@ -7,7 +7,7 @@ setup(
     author='Philip Murray',
     author_email='philipmurray.code@gmail.com',
     url='https://github.com/philip-murray/dynamic-manim-components',
-    packages=find_packages(where='.'),
+    packages=find_packages(where='dynamic_manim_components'),
     package_dir={'': 'dynamic_manim_components'},
     install_requires=[
         'manim>=18.1.0', 
