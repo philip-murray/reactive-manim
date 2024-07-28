@@ -6,6 +6,11 @@
 [Examples](#examples)
 [Guide](#guide)
 
+<br>
+
+```sh
+pip install dynamic-manim-components
+```
 
 <br>
 <br>
@@ -42,13 +47,18 @@ Click for more examples.
 
 ## Install
 
-After download/extracting or cloning, you can place the `dynamic_manim_components` directory in a specific manim project directory, or in a root/workspace directory that contains your manim projects. 
-
 ⚠️ `dynamic_manim_components` overwrites the definition for MathTex, it must be imported after importing `manim`.
 
 ⚠️ This project is meant for use with **ManimCE version 0.18.1, Cairo**.
 
+```sh
+pip install dynamic-manim-components
+```
+
 <br>
+<br>
+
+If you don't want to use the pip installer, then after download/extracting or cloning, you can place the `dynamic_manim_components` directory in a specific manim project directory, or in a root/workspace directory that contains your manim projects. 
 
 If you place `dynamic_manim_components` inside a specific manim project directory, then for any python file inside the directory, you can import using:
 
