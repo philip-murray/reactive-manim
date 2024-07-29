@@ -935,7 +935,7 @@ Partial transformation is still in development, it has unresolved problems.
 
 All three transformation constructors support partial transformation. 
 
-When the `TransformInStages` is provided a subcomponent of an mobject-graph, it uses the complete mobject-graph to construct the transformation, and uses the subcomponent as an ID selection to determine which IDs to animate. 
+When `TransformInStages` is provided a subcomponent of an mobject-graph, it uses the complete mobject-graph to construct the transformation, and uses the subcomponent as an ID selection to determine which IDs to animate. 
 
 When provided a subcomponent, the animation generator includes the subcomponent's ID, and recursively includes its descendants in the ID selection. For example, in `tex = MathTex("y, "=", Term("e", ["-", "x"])`, passing in the term subcomponent would include an ID selection for: Term, MathString("e"), MathTex("-", "x"), MathString("-") and MathString("x").
 

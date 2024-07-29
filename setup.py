@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='dynamic-manim-components',
-    version='0.1.3',
+    version='0.1.4',
     description='A ManimCE component library, supporting component composition and automatic animation',
     author='Philip Murray',
     author_email='philipmurray.code@gmail.com',

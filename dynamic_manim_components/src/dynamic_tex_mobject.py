@@ -52,7 +52,6 @@ class MathEncodable(DynamicMobject):
 
         if not isinstance(self.parent, MathEncodable):
             self.restore_scale()
-            self.scale_factor = 1
 
         #if self.parent is None:
         self.move_to(self.identity.mobject_center)
