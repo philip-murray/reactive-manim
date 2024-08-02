@@ -47,8 +47,6 @@ Click for more examples.
 
 ## Install
 
-⚠️ `dynamic_manim_components` overwrites the definition for MathTex, it must be imported after importing `manim`.
-
 ⚠️ This project is meant for use with **ManimCE version 0.18.1, Cairo**.
 
 ```sh
@@ -58,22 +56,9 @@ pip install dynamic-manim-components
 <br>
 <br>
 
-If you don't want to use the pip installer, then after download/extracting or cloning, you can place the `dynamic_manim_components` directory in a specific manim project directory, or in a root/workspace directory that contains your manim projects. 
-
-If you place `dynamic_manim_components` inside a specific manim project directory, then for any python file inside the directory, you can import using:
+⚠️ `dynamic_manim_components` overwrites the definition for MathTex, it must be imported after importing `manim`.
 
 ```python
-from manim import *
-from dynamic_manim_components import *
-```
-<br>
-
-If you place `dynamic_manim_components` in a root/workspace directory, then in specific projects you will need to include the below code segment at the top of the file:
-```python
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).resolve().parent.parent))
-
 from manim import *
 from dynamic_manim_components import *
 ```
@@ -115,33 +100,31 @@ class ExponentScene(Scene):
 <br>
 
 ##### Natural Log Animation
-![loading](content/ln_sample.gif)
+![loading](content/natural_log_code_example.gif)
 
 ```python
 class NaturalLogScene(Scene):
     def construct(self):
         attach_progress_interceptors(self)
 
-        term1 = Term("e", "x")
-        term2 = Term("e", "y")
+        tex = MathTex("a", "=", "b")
+        self.add(tex).wait(0.5)
 
-        tex = MathTex(term1, "=", term2)
-        self.add(tex).wait(1)
+        tex[0] = Term("e", tex[0])
+        tex[2] = Term("e", tex[2])
+        self.play(TransformInStages.progress(tex, lag_ratio=0.6))
 
-        tex[0] = Function(r"\text{ln}", tex[0])
-        tex[2] = Function(r"\text{ln}", tex[2])
+        tex[0] = Function(r"\ln", tex[0])
+        tex[2] = Function(r"\ln", tex[2])
+        self.play(TransformInStages.progress(tex, lag_ratio=0.6))
+
+        tex[0] = MathTex(tex[0].input.superscript.pop(), tex[0])
+        tex[2] = MathTex(tex[2].input.superscript.pop(), tex[2])
         self.play(TransformInStages.progress(tex))
-        self.wait(1)
-
-        tex[0] = MathTex(term1.superscript.pop(), tex[0])
-        tex[2] = MathTex(term2.superscript.pop(), tex[2])
-        self.play(TransformInStages.progress(tex))
-        self.wait(1)
 
         tex[0] = tex[0][0]
         tex[2] = tex[2][0]
-        self.play(TransformInStages.progress(tex))
-        self.wait(1)
+        self.play(TransformInStages.progress(tex, lag_ratio=0.8))
 ```
 
 <br>
@@ -180,7 +163,7 @@ class CasesScene(Scene):
 
 ##### MathMatrix Animation
 
-![loading](content/math_matrix_scene.gif)
+![loading](content/math_matrix_code_example.gif)
 
 ```python
 class MatrixScene(Scene):
