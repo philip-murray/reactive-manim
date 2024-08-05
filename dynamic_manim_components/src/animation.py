@@ -73,11 +73,11 @@ class GraphProgressManager():
                 mobject.current_dynamic_mobject.submobjects = []
             else:
                 mobject.current_dynamic_mobject.points = self.target_graph.find_dynamic_mobject(id).points
-                mobject.current_dynamic_mobject.submobjects = [ VGroup(self.target_graph.find_dynamic_mobject(id).direct_submobject_tree().copy()) ]
+                mobject.current_dynamic_mobject.submobjects = self.target_graph.find_dynamic_mobject(id).direct_submobject_tree().copy().submobjects
 
         for id, mobject in self.source_mobjects.items():
             mobject.current_dynamic_mobject.points = self.source_graph.find_dynamic_mobject(id).points
-            mobject.current_dynamic_mobject.submobjects = [ VGroup(self.source_graph.find_dynamic_mobject(id).direct_submobject_tree().copy()) ]
+            mobject.current_dynamic_mobject.submobjects = self.source_graph.find_dynamic_mobject(id).direct_submobject_tree().copy().submobjects
             self.scene.scene_add(mobject)
 
     def end_transforms(self):
