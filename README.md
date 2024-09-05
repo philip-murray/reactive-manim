@@ -9,7 +9,7 @@
 <br>
 
 ```sh
-pip install dynamic-manim-components
+pip install reactive-manim
 ```
 
 <br>
@@ -50,17 +50,17 @@ Click for more examples.
 ⚠️ This project is meant for use with **ManimCE version 0.18.1, Cairo**.
 
 ```sh
-pip install dynamic-manim-components
+pip install reactive-manim
 ```
 
 <br>
 <br>
 
-⚠️ `dynamic_manim_components` overwrites the definition for MathTex, it must be imported after importing `manim`.
+⚠️ `reactive_manim` overwrites the definition for MathTex, it must be imported after importing `manim`.
 
 ```python
 from manim import *
-from dynamic_manim_components import *
+from reactive_manim import *
 ```
 
 <br>

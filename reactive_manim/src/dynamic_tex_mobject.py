@@ -115,7 +115,7 @@ class MathComponent(MathEncodable):
 
         if not isinstance(term, MathEncodable) and not ignore_type:
             if isinstance(term, manim.MathTex):
-                raise Exception("Use dynamic_manim_components.MathTex instead of manim.MathTex")
+                raise Exception("Use reactive_manim.MathTex instead of manim.MathTex")
             raise Exception("Recieved non-MathEncodble input of type ", type(term))
         
         term = super().register_child(term)

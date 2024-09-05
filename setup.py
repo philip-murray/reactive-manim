@@ -4,15 +4,15 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name='dynamic-manim-components',
-    version='0.1.8',
-    description='A ManimCE component library, supporting component composition and automatic animation',
+    name='reactive-manim',
+    version='0.0.0',
+    description='A component library for ManimCE, supporting component composition and automatic animation. Supports declarative syntax for writing components inspired by React.js.',
     author='Philip Murray',
     author_email='philipmurray.code@gmail.com',
-    url='https://github.com/philip-murray/dynamic-manim-components',
+    url='https://github.com/philip-murray/reactive-manim',
     long_description=long_description,
     long_description_content_type="text/markdown",
-    packages=['dynamic_manim_components', 'dynamic_manim_components.src', 'dynamic_manim_components.src.manim_src'],
+    packages=['reactive_manim', 'reactive_manim.src', 'reactive_manim.src.manim_src'],
     install_requires=[
         'manim>=0.18.1', 
     ],
