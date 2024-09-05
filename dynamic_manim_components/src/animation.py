@@ -31,7 +31,7 @@ class GraphProgressManager():
 
 
     def begin_transforms(self):
-
+        
         if self.is_transforming == True:
             return
         
@@ -81,7 +81,7 @@ class GraphProgressManager():
             self.scene.scene_add(mobject)
 
     def end_transforms(self):
-
+        
         if self.is_transforming == False:
             return
         
@@ -95,7 +95,7 @@ class GraphProgressManager():
         for id, mobject in self.mobject_union.items():
             mobject.current_dynamic_mobject.points = self.recover_points[mobject.id]
             mobject.current_dynamic_mobject.submobjects = self.recover_submobjects[mobject.id]
-
+        
         self.create_progress_point()
         
     def create_progress_point(self):
@@ -349,7 +349,7 @@ class AbstractDynamicTransform(Animation):
         def create_progress_point(graph: DynamicMobjectGraph):
             _scene_progress_manager = cls._scene_progress_manager
 
-            for mobject in graph.mobjects:
+            for mobject in graph.dynamic_mobjects:
                 mobject.source_id = None
                 mobject.target_id = None
 
@@ -446,8 +446,8 @@ class AbstractDynamicTransform(Animation):
 
 
         return animation
-
-
+    
+    
     @classmethod
     def from_copy(
         cls,
@@ -679,6 +679,7 @@ class GraphTransformDescriptor():
                 return None
     
     def find_target_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
+        
         if self.target_graph.contains(id):
             return self.target_graph.find_dynamic_mobject(id)
         else:
@@ -892,9 +893,9 @@ class ItinerarySelectionInterceptor():
     def set_source(self, mobject: Mobject | DynamicMobject) -> ItinerarySelectionInterceptor:
 
         if isinstance(mobject, DynamicMobject):
-            for mobject in mobject.get_dynamic_family():
-                if mobject.id in self.itineraries:
-                    self.itineraries[mobject.id].source_mobject = mobject.direct_submobject_tree().copy()
+            for descendant in mobject.get_dynamic_family():
+                if descendant.id in self.itineraries:
+                    self.itineraries[descendant.id].source_mobject = descendant.direct_submobject_tree().copy()
         else:
             for itinerary in self.itineraries.values():
                 itinerary.source_mobject = mobject.copy()

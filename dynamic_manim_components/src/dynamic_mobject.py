@@ -386,6 +386,7 @@ class DynamicMobjectSubgraph(VMobject):
         self.mobjects: Set[MobjectIdentity] = [ mobject.identity for mobject in dynamic_mobjects ]
         self.graph = graph
         super().__init__()
+        self.submobjects = [ mobject.direct_submobject_tree() for mobject in self.dynamic_mobjects ]
 
     def contains(self, id: UUID):
         for mobject in self.mobjects:
@@ -423,7 +424,7 @@ class DynamicMobjectSubgraph(VMobject):
     
     def __sub__(self, mobject: Mobject) -> DynamicMobjectSubgraph:
         subgraph = DynamicMobjectSubgraph.from_adapt(mobject)
-        dynamic_mobjects = set(self.dynamic_mobjects) - set(subgraph.dynamic_mobjects)
+        dynamic_mobjects = set(self.dynamic_mobjects).difference(set(subgraph.dynamic_mobjects))
         return DynamicMobjectSubgraph(*dynamic_mobjects)
 
     def __add__(self, mobject: Mobject) -> DynamicMobjectSubgraph:
@@ -504,9 +505,10 @@ class DynamicMobject(VMobject):
                 f"which has currently represented by {self.identity.current_dynamic_mobject}"
             )
 
-    def invalidate(self):
+    def invalidate(self) -> Self:
         self.is_current_dynamic_mobject_guard()  
         self.identity.set_dynamic_mobject(self)
+        return self
 
     def restore_scale(self):
         super().scale(self.scale_factor)
@@ -831,17 +833,21 @@ class DynamicMobject(VMobject):
         for mobject in self.get_dynamic_family():
             mobject.in_composite_edit = True
 
-    def end_composite_eidt(self):
+    def end_composite_edit(self):
         for mobject in self.get_dynamic_family():
             mobject.in_composite_edit = False
 
+    
     def set_color(
         self, color: ParsableManimColor = YELLOW_C, family: bool = True
     ) -> Self:
         
         if not self.in_composite_edit:
+            self.begin_composite_edit()
+            self.invalidate()
             super().set_color(color=color, family=family)
             self.invalidate()
+            self.end_composite_edit()
         else:
             super().set_color(color=color, family=family)
 

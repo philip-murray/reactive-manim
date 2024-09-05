@@ -475,8 +475,8 @@ class Term(MathComponent):
     def __init__(
             self, 
             term, 
-            superscript = "", 
-            subscript = "",
+            superscript = None, 
+            subscript = None,
         ):
         
         self.base = self.adapt_input(term)
@@ -595,17 +595,20 @@ class Parentheses(MathComponent):
         inner
     ):
         self._inner = self.adapt_input(inner)
-        self.bracket_l = MathString(r"(")
-        self.bracket_r = MathString(r")")
+        self.spacer = MathString("\mspace{-3mu}")
+        self.bracket_l = BracketMathStringFragment(r"\left(")
+        self.bracket_r = BracketMathStringFragment(r"\right)")
         super().__init__()
 
     def compose_tex_string(self):
 
         self._inner = self.register_child(self._inner)
+        self.spacer = self.register_child(self.spacer)
         self.bracket_l = self.register_child(self.bracket_l)
         self.bracket_r = self.register_child(self.bracket_r)
 
         return ([
+            self.spacer,
             self.bracket_l,
             self._inner,
             self.bracket_r
@@ -641,23 +644,23 @@ class Function(MathComponent):
     ):
         self._name = self.adapt_input(name)
         self._input = self.adapt_input(input)
-        self.bracket_l = MathString(r"(")
-        self.bracket_r = MathString(r")")
+        self._parentheses = Parentheses(self._input)
         super().__init__()
 
     def compose_tex_string(self):
         self._name = self.register_child(self._name)
-        self._input = self.register_child(self._input)
-        self.bracket_l = self.register_child(self.bracket_l)
-        self.bracket_r = self.register_child(self.bracket_r)
+        self._parentheses = self.register_child(self._parentheses)
+        self._input = self._parentheses._inner
 
         return ([
             self._name,
-            self.bracket_l,
-            self._input,
-            self.bracket_r
+            self._parentheses
         ])
     
+    @property
+    def parentheses(self):
+        return self._parentheses
+
     @property
     def input(self):
         return self._input

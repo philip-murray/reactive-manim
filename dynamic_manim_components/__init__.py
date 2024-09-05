@@ -52,4 +52,14 @@ def on_atexit():
                 "You can upgrade via [yellow]pip install -U dynamic-manim-components[/yellow]",
             )
 
+        console.print(
+            ""
+        )
+        console.print(
+            "dynamic-manim-components has been renamed to reactive-manim, you can install it via [bright_magenta]pip install -U reactive-manim[/bright_magenta]"
+        )
+        console.print(
+            "and using the import statement [bright_cyan]from reactive_manim import *[bright_cyan]"
+        )
+
 atexit.register(on_atexit)
