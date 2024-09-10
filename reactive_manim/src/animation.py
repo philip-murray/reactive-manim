@@ -164,6 +164,11 @@ class SceneProgressManager():
 
 def attach_progress_interceptors(scene: Scene) -> SceneProgressManager:
 
+    if hasattr(scene, "ATTACH_PROGRESS_INTERCEPTORS_FLAG"):
+        return scene
+    
+    scene.ATTACH_PROGRESS_INTERCEPTORS_FLAG = True
+
     scene_progress_manager = SceneProgressManager(scene)
     AbstractDynamicTransform._scene_progress_manager = scene_progress_manager
 
