@@ -17,9 +17,10 @@ class GraphProgressManager():
     ):
         self.scene = scene
         self.graph = graph
-        self.graph.subscribe(lambda graph: self.end_transforms())
+        
         self.is_transforming = False
-
+        self.graph.subscribe(lambda graph: self.end_transforms())
+        
         self.source_graph: DynamicMobjectGraph | None = None
         self.target_graph: DynamicMobjectGraph | None = None
 
@@ -69,13 +70,16 @@ class GraphProgressManager():
 
         for id, mobject in self.target_mobjects.items():
             if id not in self.source_mobjects:
+                # revert to fade-in vmobject, makes it invisible until it is handled by an animation
                 mobject.current_dynamic_mobject.points = VMobject().points
                 mobject.current_dynamic_mobject.submobjects = []
             else:
+                # don't remember why setting points, but isolating children from sobmobjects is probably for partial-transforms
                 mobject.current_dynamic_mobject.points = self.target_graph.find_dynamic_mobject(id).points
                 mobject.current_dynamic_mobject.submobjects = self.target_graph.find_dynamic_mobject(id).direct_submobject_tree().copy().submobjects
 
         for id, mobject in self.source_mobjects.items():
+            # dont' remember why setting points, or why scene_add() is being called on the direct submobject. 
             mobject.current_dynamic_mobject.points = self.source_graph.find_dynamic_mobject(id).points
             mobject.current_dynamic_mobject.submobjects = self.source_graph.find_dynamic_mobject(id).direct_submobject_tree().copy().submobjects
             self.scene.scene_add(mobject)
@@ -93,6 +97,7 @@ class GraphProgressManager():
             #self.scene.scene_add(mobject.current_dynamic_mobject)
 
         for id, mobject in self.mobject_union.items():
+            # GPM has it's own recover_points, as well as progress_constructor begin and end scene. 
             mobject.current_dynamic_mobject.points = self.recover_points[mobject.id]
             mobject.current_dynamic_mobject.submobjects = self.recover_submobjects[mobject.id]
         
@@ -127,6 +132,9 @@ class SceneProgressManager():
         if mobject.graph in self.progress_managers:
             manager_from_graph = self.progress_managers[mobject.graph]
         
+
+        # manager_from_active_mobject is for progress(remover)
+
         manager_from_active_mobject = None
         for progress_manager in self.progress_managers.values():
             if mobject.identity in progress_manager.active_mobjects:
@@ -162,39 +170,45 @@ class SceneProgressManager():
                 progress_manager.create_progress_point()
 
 
+def attach_progress_interceptors_core(scene: Scene) -> SceneProgressManager:
+
+        scene_progress_manager = SceneProgressManager(scene)
+        
+        scene_add = scene.add
+        scene_wait = scene.wait
+        scene_remove = scene.remove
+
+        def _add(*mobjects: Mobject) -> Scene:
+            
+            for mobject in mobjects:
+                for m in extract_direct_dynamic_mobjects(mobject):
+                    if isinstance(m, DynamicMobject):
+                        scene_progress_manager.add(m)
+
+            return scene_add(*mobjects)
+        
+        def _wait(*args, **kwargs) -> None:
+            scene_progress_manager.wait()
+            scene_wait(*args, **kwargs)
+
+        scene.add = _add
+        scene.wait = _wait
+
+        scene.scene_add = scene_add
+        scene.scene_wait = scene_wait
+        scene.scene_remove = scene_remove
+
+        return scene_progress_manager
+
 def attach_progress_interceptors(scene: Scene) -> SceneProgressManager:
 
-    if hasattr(scene, "ATTACH_PROGRESS_INTERCEPTORS_FLAG"):
-        return scene
+    if hasattr(scene, "scene_progress_manager"):
+        return scene.scene_progress_manager
     
-    scene.ATTACH_PROGRESS_INTERCEPTORS_FLAG = True
+    scene_progress_manager = attach_progress_interceptors_core(scene)
 
-    scene_progress_manager = SceneProgressManager(scene)
+    scene.scene_progress_manager = scene_progress_manager
     AbstractDynamicTransform._scene_progress_manager = scene_progress_manager
-
-    scene_add = scene.add
-    scene_wait = scene.wait
-    scene_remove = scene.remove
-
-    def _add(*mobjects: Mobject) -> Scene:
-        
-        for mobject in mobjects:
-            for m in extract_direct_dynamic_mobjects(mobject):
-                if isinstance(m, DynamicMobject):
-                    scene_progress_manager.add(m)
-
-        return scene_add(*mobjects)
-    
-    def _wait(*args, **kwargs) -> None:
-        scene_progress_manager.wait()
-        scene_wait(*args, **kwargs)
-
-    scene.add = _add
-    scene.wait = _wait
-
-    scene.scene_add = scene_add
-    scene.scene_wait = scene_wait
-    scene.scene_remove = scene_remove
 
     return scene_progress_manager
 
@@ -235,6 +249,16 @@ class AbstractDynamicTransform(Animation):
 
         return DynamicMobjectSubgraph(*mobjects)
     
+    @classmethod
+    def require_scene_progress_manager(cls, self):
+
+        _scene_progress_manager = AbstractDynamicTransform._scene_progress_manager
+        
+        if _scene_progress_manager is None:
+            raise Exception("Missing attach_progress_interceptors(self) in the body of `def construct(self)`")
+        
+        return _scene_progress_manager
+
     @classmethod
     def progress(
         cls,
@@ -376,6 +400,11 @@ class AbstractDynamicTransform(Animation):
         target_mobject: DynamicMobject,
         **kwargs
     ):
+        _scene_progress_manager = cls._scene_progress_manager
+        
+        if _scene_progress_manager is None:
+            raise Exception("Missing attach_progress_interceptors(self) in the body of `def construct(self)`")
+
         source_graph = source_mobject.graph
         target_graph = target_mobject.graph
 
@@ -452,6 +481,7 @@ class AbstractDynamicTransform(Animation):
 
         return animation
     
+
     
     @classmethod
     def from_copy(
@@ -460,6 +490,13 @@ class AbstractDynamicTransform(Animation):
         target_mobject,
         **kwargs
     ):
+        _scene_progress_manager = cls._scene_progress_manager
+        
+        if _scene_progress_manager is None:
+            raise Exception("Missing attach_progress_interceptors(self) in the body of `def construct(self)`")
+        
+        
+
         if not isinstance(source_mobject, DynamicMobjectGraph):
             source_graph = cls.extract_subgraph(source_mobject).graph
         else:
