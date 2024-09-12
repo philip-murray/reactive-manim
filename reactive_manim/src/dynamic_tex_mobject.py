@@ -995,3 +995,51 @@ class MathMatrix(MathComponent):
 
     def __iter__(self):
         return iter(self._matrix.tolist())
+    
+
+class Root(MathComponent):
+
+    def __init__(
+        self,
+        radicand,
+        index = None
+    ):
+        self._radicand = radicand
+        self._radical_symbol = MathStringFragment("", submobject_count=2)
+        self._index = index
+        super().__init__(permit_none_children=True)
+
+    def compose_tex_string(self):
+
+        self._radicand = self.register_child(self._radicand)
+        self._radical_symbol = self.register_child(self._radical_symbol)
+        self._index = self.register_child(self._index)
+        
+        if self.index is None:
+            self.child_components = [ self._index, self._radical_symbol, self._radicand ]
+            return f"\\sqrt[{self._index.get_tex_string()}]{{{self._radicand.get_tex_string()}}}"
+        else:
+            self.child_components = [ self._radical_symbol, self._radicand ]
+            return f"\\sqrt[{self._index.get_tex_string()}]{{{self._radicand.get_tex_string()}}}"
+    
+    @property
+    def radicand(self):
+        return self._radicand
+
+    @radicand.setter
+    def radicand(self, radicand):
+        self._radicand = self.adapt_input(radicand)
+        self.invalidate()
+
+    @property
+    def index(self):
+        return self._index
+
+    @index.setter
+    def index(self, index):
+        self._index = self.adapt_input(index)
+        self.invalidate()
+
+    @property
+    def radical_symbol(self):
+        return self._radical_symbol
