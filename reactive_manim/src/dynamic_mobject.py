@@ -379,11 +379,11 @@ class DynamicMobjectSubgraph(VMobject):
         if graph is None:
             graph = dynamic_mobjects[0].graph
         
-        for mobject in dynamic_mobjects:
-            if mobject.graph is not graph:
-                raise Exception()
+        #for mobject in dynamic_mobjects:
+        #    if mobject.graph is not graph:
+        #        raise Exception()
         
-        self.mobjects: Set[MobjectIdentity] = [ mobject.identity for mobject in dynamic_mobjects ]
+        self.mobjects: List[MobjectIdentity] = [ mobject.identity for mobject in dynamic_mobjects ]
         self.graph = graph
         super().__init__()
         self.submobjects = [ mobject.direct_submobject_tree() for mobject in self.dynamic_mobjects ]
