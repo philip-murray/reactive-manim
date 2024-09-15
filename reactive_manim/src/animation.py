@@ -62,8 +62,8 @@ class AbstractDynamicTransformManager():
     ):
         self.source_graph = source_graph
         self.target_graph = target_graph
-        self.scene_progress_manager = SceneProgressManager.scene_progress_manager()
-        self.scene = self.scene_progress_manager.scene
+        self.scene_manager = SceneManager.scene_manager()
+        self.scene = self.scene_manager.scene
 
 
         self.subscription_id = uuid.uuid4()
@@ -71,21 +71,20 @@ class AbstractDynamicTransformManager():
         # invalidation of graph-of-interest is used as a proxy for end_transforms() to reduce user notation
 
         self.graph = graph
-        self.graph.subscribe(lambda: self.end_transforms(), self.subscription_id)
+        self.graph.subscribe(lambda graph: self.end_transforms(), self.subscription_id)
         self.begin_transforms()
 
     def begin_transforms(self):
 
         # This is run on the first scene.play(TransformInStages.some_constructor(tex)) in a series of some_constructor-partial-transforms
         
+        self.transform_descriptor = GraphTransformDescriptor(self.source_graph, self.target_graph)
+        self.transform_containers = { id: VMobject() for id in self.transform_descriptor.ids() }
+
         self.transform_observers = self.observers()
         #self.restructure_scene()
         self.save_recover_point()
         self.revert_mobjects()
-
-        self.transform_descriptor = GraphTransformDescriptor(self.source_graph, self.target_graph)
-        self.transform_containers = { id: VMobject() for id in self.transform_descriptor.ids() }
-
         self.create_transform_containers()
         self.restructure_mobjects()
 
@@ -128,8 +127,8 @@ class AbstractDynamicTransformManager():
 
         for id in self.transform_descriptor.ids():
             if self.transform_descriptor.has_source(id):
-                self.transform_containers[id].points = self.source_graph.get_dynamic_mobject(id).copy().points
-                self.transform_containers[id].submobjects = [ self.source_graph.get_dynamic_mobject(id).direct_submobject_tree().copy() ]
+                self.transform_containers[id].points = self.transform_descriptor.find_source_dynamic_mobject(id).copy().points
+                self.transform_containers[id].submobjects = [ self.transform_descriptor.find_source_dynamic_mobject(id).direct_submobject_tree().copy() ]
 
     def restructure_mobjects(self):
 
@@ -153,7 +152,8 @@ class AbstractDynamicTransformManager():
         # for from_copy/replacement_transform, it creates one since none exists, as these are introductory transforms for the graph-of-interest (target_graph)
 
         self.graph.unsubscribe(self.subscription_id)
-        self.scene_progress_manager.create_progress_manager(self.graph).create_progress_point()
+        self.scene_manager.delete_transform_manager(self.graph)
+        self.scene_manager.create_progress_manager(self.graph).create_progress_point()
 
     def recover_mobjects(self):
 
@@ -211,7 +211,7 @@ class ProgressTransformManager(AbstractDynamicTransformManager):
         # the mobject_union will contain all the stack mobjects, including a, b, c, d
 
         self.mobject_union = { **self.graph_progress_manager.source_mobjects, **self.graph_progress_manager.target_mobjects }
-        return list(self.mobject_union)
+        return list(self.mobject_union.values())
 
 
     def revert_mobjects(self):
@@ -254,9 +254,6 @@ class ReplacementTransformManager(AbstractDynamicTransformManager):
             target_graph=target_graph
         )
 
-        self.source_graph = self.source_graph
-        self.target_graph = self.target_graph
-
     def observers(self):
 
         """
@@ -267,13 +264,13 @@ class ReplacementTransformManager(AbstractDynamicTransformManager):
 
         Here, we want to have x, y, y, z observe the transform, both y-mobjects will share the same transform_container in their submobjects
         
-        scene -> tex1[y] -> transform_containers[y]
-        scene -> tex2[y] -> transform_containers[y]
+        scene -> tex1[y] --submobjects[0]-> transform_containers[y]
+        scene -> tex2[y] --submobjects[0]-> transform_containers[y]
         """
 
         return [ *self.source_graph.mobjects, *self.target_graph.mobjects ]
     
-    def revert_mobjects(self, mobject: DynamicMobject):
+    def revert_mobjects(self):
 
         # consider tex1 = Term(x, Term(y, z)); tex2 = tex1.shift(DOWN)
         # if we wanted to introduce only y' at first, then the from_copy(tex1, y') would conclude with scene_add(y')
@@ -295,7 +292,7 @@ class ReplacementTransformManager(AbstractDynamicTransformManager):
             else:
                 revert_to_prior_mobject(mobject)
 
-class FromCopyTransformsManager(AbstractDynamicTransformManager):
+class FromCopyTransformManager(AbstractDynamicTransformManager):
 
     def __init__(
         self,
@@ -308,10 +305,11 @@ class FromCopyTransformsManager(AbstractDynamicTransformManager):
             target_graph=target_graph
         )
 
-        self.source_graph = self.source_graph
-        self.target_graph = self.target_graph
-
+    def observers(self):
+        return self.target_graph.mobjects
     
+    def revert_mobjects(self):
+        pass
 
 
 
@@ -342,7 +340,7 @@ class GraphProgressManager():
 
     def save_target_graph(self):
         self.target_graph = self.graph.copy()
-        self.source_mobjects = { mobject.id: mobject for mobject in self.graph.mobjects }
+        self.target_mobjects = { mobject.id: mobject for mobject in self.graph.mobjects }
 
         """ 
         ID-POLICY, UPDATE SOURCE-GRAPH WITH TARGET-ID FLAGS SET BY USER DURING EDIT-MODE
@@ -353,26 +351,27 @@ class GraphProgressManager():
         This updates the source_graph with target_id flags set by the user in edit-mode
         """
 
-        for mobject in self.graph_progress_manager.graph.dynamic_mobjects: # stack-mobjects
-            if (mobject.target_id is not None) and self.graph_progress_manager.source_graph.contains(mobject.id):
+        for mobject in self.graph.dynamic_mobjects: # stack-mobjects
+            if (mobject.target_id is not None) and self.source_graph.contains(mobject.id):
                 self.source_graph.find_dynamic_mobject(mobject.id).target_id = mobject.target_id
 
 
 
 
-class SceneProgressManager():
+class SceneManager():
 
-    _scene_progress_manager: SceneProgressManager | None = None
+    _scene_manager: SceneManager | None = None
     _scene: Scene | None = None
     
-    def scene_progress_manager(self):
+    @staticmethod
+    def scene_manager():
 
-        scene_progress_manager = SceneProgressManager._scene_progress_manager
+        scene_manager = SceneManager._scene_manager
         
-        if scene_progress_manager is None:
+        if scene_manager is None:
             raise Exception("Missing attach_progress_interceptors(self) in the body of `def construct(self)`")
         
-        return scene_progress_manager
+        return scene_manager
     
     def __init__(
         self,
@@ -395,10 +394,13 @@ class SceneProgressManager():
     
     def create_transform_manager(self, graph, function):
         
-        if graph not in self.transform_managers[graph]:
+        if graph not in self.transform_managers:
             self.transform_managers[graph] = function()
 
-        return self.transform_managers[graph] 
+        return self.transform_managers[graph]
+    
+    def delete_transform_manager(self, graph):
+        del self.transform_managers[graph]
         
 
     def has_progress_manager(self, graph: DynamicMobjectGraph):
@@ -409,7 +411,7 @@ class SceneProgressManager():
         if graph in self.progress_managers:
             return self.progress_managers[graph]
         
-        raise Exception()
+        raise Exception("No progress point for DynamicMobjectGraph exists")
     
     def create_progress_manager(self, graph: DynamicMobjectGraph):
 
@@ -420,19 +422,19 @@ class SceneProgressManager():
 
     
     def add(self, mobject: DynamicMobject):
-        
         manager = self.create_progress_manager(mobject.graph)
         manager.create_progress_point()
 
     def wait(self):
         for progress_manager in self.progress_managers.values():
-            if not progress_manager.is_transforming:
+            if not self.has_transform_manager(progress_manager.graph):
                 progress_manager.create_progress_point()
 
 
-def attach_progress_interceptors_core(scene: Scene) -> SceneProgressManager:
 
-        scene_progress_manager = SceneProgressManager(scene)
+def attach_progress_interceptors_core(scene: Scene) -> SceneManager:
+
+        scene_manager = SceneManager(scene)
         
         scene_add = scene.add
         scene_wait = scene.wait
@@ -443,12 +445,12 @@ def attach_progress_interceptors_core(scene: Scene) -> SceneProgressManager:
             for mobject in mobjects:
                 for m in extract_direct_dynamic_mobjects(mobject):
                     if isinstance(m, DynamicMobject):
-                        scene_progress_manager.add(m)
+                        scene_manager.add(m)
 
             return scene_add(*mobjects)
         
         def _wait(*args, **kwargs) -> None:
-            scene_progress_manager.wait()
+            scene_manager.wait()
             scene_wait(*args, **kwargs)
 
         scene.add = _add
@@ -458,40 +460,33 @@ def attach_progress_interceptors_core(scene: Scene) -> SceneProgressManager:
         scene.scene_wait = scene_wait
         scene.scene_remove = scene_remove
 
-        return scene_progress_manager
+        return scene_manager
 
-def attach_progress_interceptors(scene: Scene) -> SceneProgressManager:
+def attach_progress_interceptors(scene: Scene) -> SceneManager:
 
-    if hasattr(scene, "scene_progress_manager"):
-        return scene.scene_progress_manager
+    if hasattr(scene, "scene_manager"):
+        return scene.scene_manager
     
-    scene_progress_manager = attach_progress_interceptors_core(scene)
+    scene_manager = attach_progress_interceptors_core(scene)
 
-    scene.scene_progress_manager = scene_progress_manager
-    AbstractDynamicTransform._scene_progress_manager = scene_progress_manager
+    scene.scene_manager = scene_manager
+    SceneManager._scene_manager = scene_manager
 
-    return scene_progress_manager
+    return scene_manager
 
 
 
-class AbstractDynamicTransformConstructor():
+
+class AbstractDynamicTransform(Animation):
+
+    @staticmethod
+    def extract_graph(subgraph: DynamicMobjectSubgraph):
+
+        graphs = { mobject.graph for mobject in subgraph.mobjects }
+        return extract_unique(graphs)
     
-    def create_deferred_animation(
-            self, 
-            cls: type[AbstractDynamicTransform],
-            **kwargs
-        ) -> AbstractDynamicTransform:
-        
-        # currently, self.source_graph set until after APDTC.__init__, by PADTC-implementer
-        # currently, self.transform_manager set after ADTC.__init__ by implementer
-        animation = cls(self.transform_manager, self.participants(), **kwargs)
-        return animation
-
-    @abstractmethod
-    def participants(self) -> Set[UUID]:
-        pass
-
-    def extract_subgraph(self, mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject]) -> DynamicMobjectSubgraph:
+    @staticmethod
+    def extract_subgraph(mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject]) -> DynamicMobjectSubgraph:
 
         if isinstance(mobject, DynamicMobjectSubgraph):
             return mobject
@@ -505,101 +500,7 @@ class AbstractDynamicTransformConstructor():
             mobjects.extend(AbstractDynamicTransform.extract_subgraph(item).dynamic_mobjects)
 
         return DynamicMobjectSubgraph(*mobjects)
-        
-    
-    def extract_graph(self, subgraph: DynamicMobjectSubgraph):
 
-        graphs = { mobject.graph for mobject in subgraph.mobjects }
-        return extract_unique(graphs)
-    
-    
-            
-
-    
-
-
-class ProgressTransformConstructor(AbstractDynamicTransformConstructor):
-
-    def __init__(
-            self, 
-            mobject
-        ):
-        self.scene_progress_manager = SceneProgressManager.scene_progress_manager()
-        self.subgraph = self.extract_subgraph(mobject)
-        self.graph = self.extract_graph()
-
-
-        if not self.scene_progress_manager.has_progress_manager(self.graph):
-            raise Exception("No progress point for DynamicMobjectGraph exists")
-        
-        self.graph_progress_manager = self.scene_progress_manager.get_progress_manager(self.graph)
-
-        self.scene_progress_manager.has_
-        def create_transform_manager():
-            return ProgressTransformManager(self.graph_progress_manager)
-
-        self.transform_manager = self.scene_progress_manager.create_transform_manager(self.graph, create_transform_manager)
-        
-    def extract_graph(self):
-
-        primary = { mobject.graph for mobject in self.subgraph.mobjects if self.scene_progress_manager.has_progress_manager(mobject.graph) }
-
-        if len(primary) > 1:
-            raise Exception("Cannot progress selection of multiple DynamicMobjectGraph(s)")
-        
-        if len(primary) == 0:
-            raise Exception("DynamicMobjectGraph does not have progress-point, missing scene.add(mobject) or scene.play(Introducer(mobject))")
-        
-        return extract_unique(primary)
-
-    
-    def participants(self) -> Set[UUID]:
-
-        # progress(tex - remover) will still include the remover, because in
-        # progress(tex) it is assumed the remover children should be progressed as well
-
-        particpants = set()
-        
-        for mobject in self.subgraph.mobjects:
-            for descendant in self.transform_manager.mobject_union.values():
-                if self.transform_manager.transform_descriptor.is_continuous_ancestor(mobject.id, descendant.id):
-                    particpants.add(descendant.id)
-        
-        return particpants
-        
-
-
-class ReplacementTransformConstructor(AbstractDynamicTransformConstructor):
-
-    def __init__(
-        self,
-        source_mobject,
-        target_mobject
-    ):
-        self.source_graph = self.extract_graph(self.source_subgraph)
-        self.target_graph = self.extract_graph(self.target_subgraph)
-
-        self.scene_progress_manager = SceneProgressManager.scene_progress_manager()
-
-        if not self.scene_progress_manager.has_transform_manager():
-            self.scene_progress_manager.create_transform_manager(lambda: ReplacementTransformManager(self.source_graph, self.target_graph))
-
-        self.transform_manager = self.scene_progress_manager.get_transform_manager()
-
-        if not isinstance(self.transform_manager, ReplacementTransformManager):
-            raise Exception("Cannot use .replacement_transform() alongside other partial transform constructors")
-
-        self.source_subgraph = self.extract_subgraph(source_mobject)
-        self.target_subgraph = self.extract_subgraph(target_mobject)
-
-    def participants(self) -> List[UUID]:
-        return { mobject.id for mobject in self.source_subgraph.dynamic_mobjects }.union({ mobject.id for mobject in self.target_subgraph.dynamic_mobjects })
-    
-    
-    
-
-
-class AbstractDynamicTransform(Animation):
 
     @classmethod
     def progress(
@@ -607,7 +508,31 @@ class AbstractDynamicTransform(Animation):
         mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
         **kwargs
     ):
-        animation = ProgressTransformConstructor(mobject, **kwargs).create_deferred_animation(**kwargs)
+        scene_manager = SceneManager.scene_manager()
+        subgraph = cls.extract_subgraph(mobject)
+        primary = { mobject.graph for mobject in subgraph.mobjects if scene_manager.has_progress_manager(mobject.graph) }
+
+        if len(primary) > 1:
+            raise Exception("Cannot progress selection of multiple DynamicMobjectGraph(s)")
+        
+        if len(primary) == 0:
+            raise Exception("DynamicMobjectGraph does not have progress-point, missing scene.add(mobject) or scene.play(Introducer(mobject))")
+        
+        graph = extract_unique(primary)
+        graph_progress_manager = scene_manager.get_progress_manager(graph)
+        transform_manager = scene_manager.create_transform_manager(graph, lambda: ProgressTransformManager(graph_progress_manager))
+
+        if not isinstance(transform_manager, ProgressTransformManager):
+            raise Exception("Cannot use .progress() transform alongside .replacement_transform() or .from_copy()")
+
+        particpants = set()
+        
+        for mobject in subgraph.mobjects:
+            for descendant in transform_manager.mobject_union.values():
+                if transform_manager.transform_descriptor.is_continuous_ancestor(mobject.id, descendant.id):
+                    particpants.add(descendant.id)
+
+        animation = cls(transform_manager, particpants, **kwargs)
         return animation
 
     
@@ -618,114 +543,48 @@ class AbstractDynamicTransform(Animation):
         target_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
         **kwargs
     ):
-        animation = ReplacementTransformConstructor(source_mobject, target_mobject, **kwargs).create_deferred_animation(**kwargs)
-        return animation
+        source_subgraph = cls.extract_subgraph(source_mobject)
+        target_subgraph = cls.extract_subgraph(target_mobject)
+        source_graph = cls.extract_graph(source_subgraph)
+        target_graph = cls.extract_graph(target_subgraph)
 
+        scene_manager = SceneManager.scene_manager()
+        transform_manager = scene_manager.create_transform_manager(target_graph, lambda: ReplacementTransformManager(source_graph, target_graph))
 
-        _scene_progress_manager = AbstractDynamicTransform.require_scene_progress_manager()
+        if not isinstance(transform_manager, ReplacementTransformManager):
+            raise Exception("Cannot use .replacement_transform() alongside other partial transform constructors")
 
-        source_subgraph = AbstractDynamicTransform.extract_subgraph(source_mobject)
-        target_subgraph = AbstractDynamicTransform.extract_subgraph(target_mobject)
-        
-        source_graph = AbstractDynamicTransform.extract_graph(source_subgraph)
-        target_graph = AbstractDynamicTransform.extract_graph(target_subgraph)
-
-        subgraph1 = DynamicMobjectSubgraph.from_dynamic_mobject(source_mobject)
-        subgraph2 = DynamicMobjectSubgraph.from_dynamic_mobject(target_mobject)
-        union = { mobject.id for mobject in subgraph1.dynamic_mobjects }.union({ mobject.id for mobject in subgraph2.dynamic_mobjects })
-
-        animation = cls(
-            source_graph,
-            target_graph, 
-            union, 
-            **kwargs
-        )
-
-        submobject_saves = {}
-        points_saves = {}
-
-        def begin_scene(scene: Scene):
-            AbstractDynamicTransform._scene = scene
-
-            cls.scene_add(scene, source_mobject)
-            cls.scene_remove(scene, source_mobject)
-    
-            for mobject in subgraph1.dynamic_mobjects:
-                
-                submobject_saves[mobject] = mobject.submobjects
-                points_saves[mobject] = mobject.points
-                
-                continuous_child_ids = animation.config.transform_descriptor.child_union_ids(mobject.id)
-                mobject.submobjects = [ animation.config.transform_containers[mobject.id], *[ animation.config.transform_containers[id] for id in continuous_child_ids ]]
-
-            for mobject in subgraph2.dynamic_mobjects:
-                
-                submobject_saves[mobject] = mobject.submobjects
-                points_saves[mobject] = mobject.points
-                
-                continuous_child_ids = animation.config.transform_descriptor.child_union_ids(mobject.id)
-                mobject.submobjects = [ animation.config.transform_containers[mobject.id], *[ animation.config.transform_containers[id] for id in continuous_child_ids ]]
-
-        def clean_scene(scene: Scene):
-            cls.scene_add(scene, target_mobject)
-
-            for mobject in subgraph1.dynamic_mobjects:
-                mobject.submobjects = submobject_saves[mobject]
-                mobject.points = points_saves[mobject]
-
-            for mobject in subgraph2.dynamic_mobjects:
-                mobject.submobjects = submobject_saves[mobject]
-                mobject.points = points_saves[mobject]
-
-        animation.setup_functions = [ begin_scene ]
-        animation.clean_functions = [ clean_scene ]
-
-
-        function_id = uuid.uuid4()
-
-        def create_progress_point(graph: DynamicMobjectGraph):
-            _scene_progress_manager = cls._scene_progress_manager
-
-            for mobject in graph.dynamic_mobjects:
-                mobject.source_id = None
-                mobject.target_id = None
-
-            if _scene_progress_manager is not None:
-                _scene_progress_manager.add_graph(graph)
-
-            for root_mobject in graph.root_mobjects:
-                cls.scene_add(AbstractDynamicTransform._scene, root_mobject)
-
-            graph.unsubscribe(function_id)
-
-        target_graph.subscribe(lambda graph: create_progress_point(graph), function_id)
-
-
+        participants = { mobject.id for mobject in source_subgraph.dynamic_mobjects }.union({ mobject.id for mobject in target_subgraph.dynamic_mobjects })
+        animation = cls(transform_manager, participants, **kwargs)
         return animation
     
 
-    
     @classmethod
     def from_copy(
         cls,
-        source_mobject,
-        target_mobject,
+        source_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
+        target_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
         **kwargs
     ):
-        _scene_progress_manager = AbstractDynamicTransform.require_scene_progress_manager()
-        
-        
-
-        if not isinstance(source_mobject, DynamicMobjectGraph):
-            source_graph = cls.extract_subgraph(source_mobject).graph
-        else:
-            source_graph = source_mobject
-
+        source_subgraph = cls.extract_subgraph(source_mobject)
         target_subgraph = cls.extract_subgraph(target_mobject)
-        target_graph = target_subgraph.graph
+        source_graph = cls.extract_graph(source_subgraph)
+        target_graph = cls.extract_graph(target_subgraph)
 
-        # required due to auto-disconnect
-        # x' -> x, means that x'.source_id = x.id
+        scene_manager = SceneManager.scene_manager()
+        transform_manager = scene_manager.create_transform_manager(target_graph, lambda: FromCopyTransformManager(source_graph, target_graph))
+
+        if not isinstance(transform_manager, FromCopyTransformManager):
+            raise Exception("Cannot use .from_copy() alongside other partial transform constructors")
+
+        """
+        ID POLICY
+
+        required due to auto-disconnect
+        x' -> x, means that x'.source_id = x.id """
+
+        particpants = { mobject.id for mobject in target_subgraph.mobjects }
+
         extra_ids = set()
         for mobject in source_graph.mobjects:
             if target_subgraph.contains(mobject.current_dynamic_mobject.target_id):
@@ -733,73 +592,14 @@ class AbstractDynamicTransform(Animation):
             if target_subgraph.contains(mobject.current_dynamic_mobject.source_id):
                 extra_ids.add(mobject.id)
 
-        animation = cls(
-            source_graph,
-            target_graph,
-            set(mobject.id for mobject in target_subgraph.mobjects).union(extra_ids),
-            **kwargs
-        )
-
-        recover_submobjects = {}
-        recover_points = {}
-
-        def begin_scene(scene: Scene):
-            AbstractDynamicTransform._scene = scene
-
-            for mobject in target_subgraph.dynamic_mobjects:
-                
-                recover_submobjects[mobject] = mobject.submobjects
-                recover_points[mobject] = mobject.points
-
-                id_union = animation.config.transform_descriptor.child_union_ids(mobject.id)
-                id_intersection = []
-
-                for id in id_union:
-                    if animation.config.transform_descriptor.is_continuous_ancestor(mobject.id, id):
-                        id_intersection.append(id)
-
-                mobject.submobjects = [ animation.config.transform_containers[mobject.id], *[ target_graph.find_dynamic_mobject(id) for id in id_intersection ]]
-
-        def clean_scene(scene: Scene):
-            
-            for mobject in target_subgraph.dynamic_mobjects:
-                
-                mobject.submobjects = []
-                cls.scene_add(scene, mobject)
-
-                mobject.submobjects = recover_submobjects[mobject]
-                mobject.points = recover_points[mobject]
-
-        animation.setup_functions = [ begin_scene ]
-        animation.clean_functions = [ clean_scene ]
-
-
-        function_id = uuid.uuid4()
-
-        def create_progress_point(graph: DynamicMobjectGraph):
-            _scene_progress_manager = cls._scene_progress_manager
-
-            for mobject in graph.dynamic_mobjects:
-                mobject.source_id = None
-                mobject.target_id = None
-
-            if _scene_progress_manager is not None:
-                _scene_progress_manager.add_graph(graph)
-
-            for root_mobject in graph.root_mobjects:
-                cls.scene_add(AbstractDynamicTransform._scene, root_mobject)
-
-            graph.unsubscribe(function_id)
-
-        target_graph.subscribe(lambda graph: create_progress_point(graph), function_id)
-            
-
+        animation = cls(transform_manager, particpants.union(extra_ids), **kwargs)
         return animation
+
+        
     
     def __init__(
         self,
-        source_graph: DynamicMobjectGraph, 
-        target_graph: DynamicMobjectGraph,
+        transform_manager: AbstractDynamicTransformManager,
         ids: Set[UUID],
         run_time: float | None = None, 
         **kwargs
@@ -808,7 +608,7 @@ class AbstractDynamicTransform(Animation):
         if run_time is None:
             run_time = 1
 
-        self.config = DynamicTransformConfiguration(source_graph, target_graph, ids)
+        self.config = DynamicTransformConfiguration(transform_manager, ids)
         self.container_group = VGroup(*self.config.transform_containers.values())
 
         self.setup_functions: List[Callable[[Scene], None]] = []
@@ -891,9 +691,9 @@ class AbstractDynamicTransform(Animation):
     def clean_up_from_scene(self, scene: Scene) -> None:
         self.animation.clean_up_from_scene(scene)
 
-        scene.remove(self.super_mobject)
-        self.scene_add(scene, self.animation.mobject)
-        self.scene_remove(scene, self.animation.mobject)
+        scene.scene_remove(self.super_mobject)
+        scene.scene_add(self.animation.mobject)
+        scene.scene_remove(self.animation.mobject)
 
         for function in self.clean_functions:
             function(scene)
@@ -922,7 +722,7 @@ class GraphTransformDescriptor():
         self.target_graph = target_graph
 
     def ids(self):
-        return { id for id in self.source_graph.mobjects }.union({ id for id in self.target_mobjects })
+        return { mobject.id for mobject in self.source_graph.mobjects }.union({ mobject.id for mobject in self.target_graph.mobjects })
 
     def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
 
@@ -1406,8 +1206,7 @@ class TransformInStages(AbstractDynamicTransform):
 
     def __init__(
         self, 
-        source_graph: DynamicMobjectGraph,
-        target_graph: DynamicMobjectGraph,
+        transform_manager: AbstractDynamicTransformManager,
         ids: Set[UUID],
         lag_ratio: float = 1,
         track_run_time: float = 1,
@@ -1415,7 +1214,7 @@ class TransformInStages(AbstractDynamicTransform):
     ):
         self._lag_ratio = lag_ratio
         self.track_run_time = track_run_time
-        super().__init__(source_graph, target_graph, ids, **kwargs)
+        super().__init__(transform_manager, ids, **kwargs)
     
     def apply(self):
 
