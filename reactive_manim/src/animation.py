@@ -725,7 +725,8 @@ class AbstractDynamicTransform(Animation):
         else:
             self.run_time = self.animation.run_time
 
-        scene.add(self.animation.mobject)
+        # having this causes thicker-overlay appearence, even on independent mobjects. 
+        #scene.add(self.animation.mobject)
 
         for function in self.setup_functions:
             function(scene)
