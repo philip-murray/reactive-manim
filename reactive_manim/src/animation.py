@@ -52,6 +52,10 @@ scene.play(TransformInStages.from_copy(src, tex[2]))
 tex.some_edit() causes ADMT.end_transforms(), which unrestrucutres mobjects
 """
 
+class MyObject(VMobject):
+    pass
+ZARR = []
+
 class AbstractDynamicTransformManager():
 
     def __init__(
@@ -78,12 +82,13 @@ class AbstractDynamicTransformManager():
 
         # This is run on the first scene.play(TransformInStages.some_constructor(tex)) in a series of some_constructor-partial-transforms
         
-        self.transform_descriptor = GraphTransformDescriptor(self.source_graph, self.target_graph)
-        self.transform_containers = { id: VMobject() for id in self.transform_descriptor.ids() }
+        self.transform_descriptor = GraphTransformDescriptor(self.source_graph.copy(), self.target_graph.copy())
+        self.transform_containers = { id: MyObject() for id in self.transform_descriptor.ids() }
+        ZARR.append(self.transform_containers)
 
         self.transform_observers = self.observers()
-        #self.restructure_scene()
         self.save_recover_point()
+        self.restructure_scene()
         self.revert_mobjects()
         self.create_transform_containers()
         self.restructure_mobjects()
@@ -98,20 +103,20 @@ class AbstractDynamicTransformManager():
 
     def restructure_scene(self):
 
-        scene_recover_mobjects = RecoverMobject()
+        #scene_recover_mobjects = RecoverMobject()
 
-        for mobject in self.transform_observers:
-            scene_recover_mobjects.save_recover_point(mobject)
+        #for mobject in self.transform_observers:
+        #    scene_recover_mobjects.save_recover_point(mobject)
         
         for current_dynamic_mobject in [ mobject.current_dynamic_mobject for mobject in self.transform_observers ]:
             current_dynamic_mobject.submobjects = []
             self.scene.scene_add(current_dynamic_mobject)
 
-            if self.transform_descriptor.is_introducer(current_dynamic_mobject.id):
-                self.scene.scene_remove(current_dynamic_mobject)
+            #if self.transform_descriptor.is_introducer(current_dynamic_mobject.id):
+            #    self.scene.scene_remove(current_dynamic_mobject)
 
-        for mobjcet in self.transform_observers:
-            scene_recover_mobjects.recover_mobject(mobject)
+        #for mobject in self.transform_observers:
+        #    scene_recover_mobjects.recover_mobject(mobject)
 
     def save_recover_point(self):
         self.recover_mobjects = RecoverMobject()
@@ -134,7 +139,7 @@ class AbstractDynamicTransformManager():
 
         for mobject in self.transform_observers:
             children = self.transform_descriptor.child_union_ids(mobject.id)
-            mobject.submobjects = [ self.transform_containers[mobject.id], *[ self.transform_containers[id] for id in children ] ]
+            mobject.current_dynamic_mobject.submobjects = [ self.transform_containers[mobject.id], *[ self.transform_containers[id] for id in children ] ]
 
         
     def end_transforms(self):
@@ -308,8 +313,8 @@ class FromCopyTransformManager(AbstractDynamicTransformManager):
     def observers(self):
         return self.target_graph.mobjects
     
-    def revert_mobjects(self):
-        pass
+   
+        
 
 
 
@@ -671,6 +676,7 @@ class AbstractDynamicTransform(Animation):
 
     def _setup_scene(self, scene):
         self.animation = self.config.build()
+        self.super_mobject.submobjects = self.animation.mobject
         
         if self.provided_run_time is not None:
             self.run_time = self.provided_run_time
@@ -691,9 +697,9 @@ class AbstractDynamicTransform(Animation):
     def clean_up_from_scene(self, scene: Scene) -> None:
         self.animation.clean_up_from_scene(scene)
 
-        scene.scene_remove(self.super_mobject)
-        scene.scene_add(self.animation.mobject)
-        scene.scene_remove(self.animation.mobject)
+        #scene.scene_remove(self.super_mobject)
+        #scene.scene_add(self.animation.mobject)
+        #scene.scene_remove(self.animation.mobject)
 
         for function in self.clean_functions:
             function(scene)
@@ -861,14 +867,13 @@ class ExtractTransform(Animation):
 
     def __init__(
         self,
-        mobject: Mobject,
+        container: Mobject,
         animation: Animation
     ):
-        self.super_mobject = VMobject()
-        self.mobject = mobject
+        self.container = container
         self.animation = animation
-        super().__init__(mobject=self.super_mobject)
-
+        super().__init__(mobject=self.container)
+    
     def begin(self):
         self.animation.begin()
 
@@ -877,13 +882,10 @@ class ExtractTransform(Animation):
 
     def interpolate(self, alpha: float) -> None:
         self.animation.interpolate(alpha)
-        self.mobject.become(self.animation.mobject)
+        self.container.become(self.animation.mobject.copy())
 
     def get_run_time(self) -> float:
         return self.animation.get_run_time()
-        
-    def clean_up_from_scene(self, scene: Scene) -> None:
-        scene.remove(self.super_mobject)
 
 
 class DynamicMobjectTransformItinerary():
@@ -1131,11 +1133,11 @@ class DynamicTransformConfiguration():
 
     def __init__(
         self,
-        transform_manager: DynamicTransformManager,
+        transform_manager: AbstractDynamicTransformManager,
         ids: Set[UUID]
     ):
-        self.source_graph = transform_manager.source_graph
-        self.target_graph = transform_manager.target_graph
+        self.source_graph = transform_manager.transform_descriptor.source_graph
+        self.target_graph = transform_manager.transform_descriptor.target_graph
         self.transform_manager = transform_manager
 
         for id in ids:
@@ -1200,6 +1202,7 @@ class DynamicTransformConfiguration():
         ids: List[UUID]
     ):
         return ItinerarySelectionInterceptor(self, ids)
+
 
 
 class TransformInStages(AbstractDynamicTransform):

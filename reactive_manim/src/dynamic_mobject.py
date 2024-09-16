@@ -47,6 +47,7 @@ class DynamicMobjectGraph():
         return None
     
     def get_dynamic_mobject(self, id: UUID) -> DynamicMobject:
+
         mobject = self.find_dynamic_mobject(id)
 
         if mobject is None:
@@ -839,14 +840,16 @@ class DynamicMobject(VMobject):
 
     
     def set_color(
-        self, color: ParsableManimColor = YELLOW_C, family: bool = True
+        self, color: ParsableManimColor = YELLOW_C, family: bool = True, simple=False
     ) -> Self:
         
         if not self.in_composite_edit:
             self.begin_composite_edit()
             self.invalidate()
             super().set_color(color=color, family=family)
-            self.invalidate()
+
+            if not simple:
+                self.invalidate()
             self.end_composite_edit()
         else:
             super().set_color(color=color, family=family)
