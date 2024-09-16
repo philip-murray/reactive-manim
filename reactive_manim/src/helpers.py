@@ -14,3 +14,21 @@ def extract_unique_or_none(iterable: Iterable[T]) -> Optional[T]:
         return None
     else:
         raise Exception()
+    
+import uuid
+
+# Initialize a counter
+counter = -1
+
+# Define the custom function that replaces uuid.uuid4()
+def custom_uuid4():
+    global counter
+    counter += 1
+
+    #if counter == 111:
+    #    raise Exception()
+    
+    return counter
+
+# Overwrite uuid.uuid4() with your custom function
+uuid.uuid4 = custom_uuid4

@@ -3,9 +3,8 @@ from abc import abstractmethod
 from typing_extensions import *
 from typing import List, Dict, overload
 import copy
-import uuid
-from uuid import UUID
 import numpy as np
+from .helpers import *
 
 from manim import *
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 from abc import abstractmethod
 from typing_extensions import *
 from typing import List, Dict
-import uuid
 import math
 
 import manim
@@ -279,6 +278,8 @@ class MathString(MathEncodable):
         self.submobjects =  [ *submobjects ]
         return submobject_count
 
+    def __repr__(self):
+        return f"MathString({self.id})"
 
 class MathStringFragment(MathEncodable):
 
