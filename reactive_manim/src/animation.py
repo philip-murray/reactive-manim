@@ -84,7 +84,7 @@ class AbstractDynamicTransformManager():
         
         self.transform_descriptor = GraphTransformDescriptor(self.source_graph.copy(), self.target_graph.copy())
         self.transform_containers = { id: MyObject() for id in self.transform_descriptor.ids() }
-        ZARR.append(self.transform_containers)
+        ZARR.extend([ x for x in self.transform_containers.values()])
 
         self.transform_observers = self.observers()
         self.save_recover_point()
@@ -103,26 +103,27 @@ class AbstractDynamicTransformManager():
 
     def restructure_scene(self):
 
-        #scene_recover_mobjects = RecoverMobject()
+        scene_recover_mobjects = RecoverMobject()
 
-        #for mobject in self.transform_observers:
-        #    scene_recover_mobjects.save_recover_point(mobject)
+        for mobject in self.transform_observers:
+            scene_recover_mobjects.save_recover_point(mobject)
         
         for current_dynamic_mobject in [ mobject.current_dynamic_mobject for mobject in self.transform_observers ]:
             current_dynamic_mobject.submobjects = []
             self.scene.scene_add(current_dynamic_mobject)
 
-            #if self.transform_descriptor.is_introducer(current_dynamic_mobject.id):
-            #    self.scene.scene_remove(current_dynamic_mobject)
-
-        #for mobject in self.transform_observers:
-        #    scene_recover_mobjects.recover_mobject(mobject)
-
-    def save_recover_point(self):
-        self.recover_mobjects = RecoverMobject()
+        #self.recover_mobjects()
+        #if self.transform_descriptor.is_introducer(current_dynamic_mobject.id):
+        #    self.scene.scene_remove(current_dynamic_mobject)
 
         for mobject in self.transform_observers:
-            self.recover_mobjects.save_recover_point(mobject)
+            scene_recover_mobjects.recover_mobject(mobject)
+
+    def save_recover_point(self):
+        self.recover_mobjects_ = RecoverMobject()
+
+        for mobject in self.transform_observers:
+            self.recover_mobjects_.save_recover_point(mobject)
 
     @abstractmethod
     def revert_mobjects(self):
@@ -130,18 +131,36 @@ class AbstractDynamicTransformManager():
 
     def create_transform_containers(self):
 
+        #for mobject in self.transform_observers:
+        #    id = mobject.id
+        #    print(type(mobject.current_dynamic_mobject), not self.transform_descriptor.is_scene_introducer(mobject.id), "-", self.transform_descriptor.target_graph.contains(id), not self.transform_descriptor.source_graph.contains(id))
+
         for id in self.transform_descriptor.ids():
-            if self.transform_descriptor.has_source(id):
+            if not self.transform_descriptor.is_introducer(id):
                 self.transform_containers[id].points = self.transform_descriptor.find_source_dynamic_mobject(id).copy().points
                 self.transform_containers[id].submobjects = [ self.transform_descriptor.find_source_dynamic_mobject(id).direct_submobject_tree().copy() ]
 
     def restructure_mobjects(self):
-
+        #pass
         for mobject in self.transform_observers:
             children = self.transform_descriptor.child_union_ids(mobject.id)
             mobject.current_dynamic_mobject.submobjects = [ self.transform_containers[mobject.id], *[ self.transform_containers[id] for id in children ] ]
 
+    def restructure_mobjects_(self, participants):
+        return
+        for mobject in self.transform_observers:
+            if mobject.id in participants:
+                children = self.transform_descriptor.child_union_ids(mobject.id)
+                mobject.current_dynamic_mobject.submobjects = [ self.transform_containers[mobject.id], *[ self.transform_containers[id] for id in children ]]
         
+    def unrestructure_mobjects_(self, participants):
+
+        for mobject in self.transform_observers:
+            if mobject.id in participants:
+                self.recover_mobjects_.recover_mobject(mobject)
+                #children = self.transform_descriptor.child_union_ids(mobject.id)
+                #mobject.current_dynamic_mobject.submobjects = [ self.transform_containers[mobject.id], *[ self.transform_containers[id] for id in children ]]
+    
     def end_transforms(self):
 
         # ID-POLICY
@@ -163,7 +182,7 @@ class AbstractDynamicTransformManager():
     def recover_mobjects(self):
 
         for mobject in self.transform_observers:
-            self.recover_mobjects.recover_mobject(mobject)
+            self.recover_mobjects_.recover_mobject(mobject)
 
 
 """
@@ -313,10 +332,20 @@ class FromCopyTransformManager(AbstractDynamicTransformManager):
     def observers(self):
         return self.target_graph.mobjects
     
+    def revert_mobjects(self):
+        return 
+        for mobject in self.observers():
+            id = mobject.id
+            if self.transform_descriptor.has_source(id):
+                self.transform_containers[id].points = self.transform_descriptor.find_source_dynamic_mobject(id).copy().points
+                self.transform_containers[id].submobjects = [ self.transform_descriptor.find_source_dynamic_mobject(id).direct_submobject_tree().copy() ]
    
-        
 
+    def create_transform_containers(self):
 
+        super().create_transform_containers()
+        for k, v in self.transform_containers.items():
+            v.set_opacity(0)
 
 
 class GraphProgressManager():
@@ -538,6 +567,9 @@ class AbstractDynamicTransform(Animation):
                     particpants.add(descendant.id)
 
         animation = cls(transform_manager, particpants, **kwargs)
+
+        #def begin_scene(scene: Scene):
+        #    for 
         return animation
 
     
@@ -588,8 +620,6 @@ class AbstractDynamicTransform(Animation):
         required due to auto-disconnect
         x' -> x, means that x'.source_id = x.id """
 
-        particpants = { mobject.id for mobject in target_subgraph.mobjects }
-
         extra_ids = set()
         for mobject in source_graph.mobjects:
             if target_subgraph.contains(mobject.current_dynamic_mobject.target_id):
@@ -597,7 +627,19 @@ class AbstractDynamicTransform(Animation):
             if target_subgraph.contains(mobject.current_dynamic_mobject.source_id):
                 extra_ids.add(mobject.id)
 
-        animation = cls(transform_manager, particpants.union(extra_ids), **kwargs)
+        particpants = { mobject.id for mobject in target_subgraph.mobjects }
+        particpants = particpants.union(extra_ids)
+
+        animation = cls(transform_manager, particpants, **kwargs)
+
+        def begin_scene(scene: Scene):
+            transform_manager.restructure_mobjects_(particpants)
+
+        def clean_scene(scene: Scene):
+            transform_manager.restructure_scene()
+            transform_manager.unrestructure_mobjects_(particpants)
+            
+        animation.clean_functions = [ clean_scene ]
         return animation
 
         
@@ -697,9 +739,10 @@ class AbstractDynamicTransform(Animation):
     def clean_up_from_scene(self, scene: Scene) -> None:
         self.animation.clean_up_from_scene(scene)
 
-        #scene.scene_remove(self.super_mobject)
-        #scene.scene_add(self.animation.mobject)
-        #scene.scene_remove(self.animation.mobject)
+        scene.scene_add(self.super_mobject).scene_remove(self.super_mobject)
+        scene.scene_add(self.animation.mobject).scene_remove(self.animation.mobject)
+        # scene add remove animation.mobject may remove parts of the GOC.
+        # I am going to do .restructure_scene() on the clean_scene() to try to add it back
 
         for function in self.clean_functions:
             function(scene)
