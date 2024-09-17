@@ -1,25 +1,9 @@
 import manim
-from .animation import attach_progress_interceptors, SceneManager, DynamicMobject, mycontains
+from .animation import attach_progress_interceptors, SceneManager, DynamicMobject
 
 
 
-def mycontains(id):
 
-    scene = SceneManager.scene_manager().scene
-
-    def recursive_find(curr, id, path):
-
-        path = [ *path, curr ]
-
-        if isinstance(curr, DynamicMobject) and curr.id == id:
-            raise Exception()
-            print(path)
-        else:
-            for m in curr.submobjects:
-                recursive_find(m, id, path)
-
-    for m in scene.mobjects:
-        recursive_find(m, id, [])
 
 def scan(id, *mobjects):
 
@@ -60,3 +44,33 @@ class Scene(manim.Scene):
     # #   return self
         
         
+
+def mycontains(id):
+
+    scene = SceneManager.scene_manager().scene
+
+    def recursive_find(curr, id, path):
+
+        path = [ *path, curr ]
+
+        if isinstance(curr, DynamicMobject) and curr.id == id:
+            raise Exception()
+            print(path)
+        else:
+            for m in curr.submobjects:
+                recursive_find(m, id, path)
+
+    for m in scene.mobjects:
+        recursive_find(m, id, [])
+
+def quick_morph(mobject: DynamicMobject):
+    scene = SceneManager.scene_manager()
+    
+    rm = RecoverMobject()
+    rm.save_recover_point(mobject.identity)
+    rm.submobjects = []
+
+    def fn():
+        rm.recover_mobject(mobject.identity)
+
+    return fn
