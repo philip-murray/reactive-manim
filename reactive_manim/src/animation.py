@@ -60,9 +60,6 @@ class TransformContainer(VMobject):
     def __repr__(self):
         return f"Container({self.id})"
 
-ZARR = []
-YARR = []
-
 class AbstractDynamicTransformManager():
 
     def __init__(
@@ -112,6 +109,11 @@ class AbstractDynamicTransformManager():
 
         for id, container in self.transform_containers.items():
             self.create_source_mobject_for_container(container, id)
+
+        # perhaps we might want to move this to RF area. 
+        for id, container in self.transform_containers.items():
+            if id in self.transform_descriptor.prevent_ids():
+                container.set_opacity(0)
 
 
         # RESTRUCTURE OBSERVERS TO POINT INTO TRANSFORM-CONTAINERS
@@ -639,6 +641,7 @@ class AbstractDynamicTransform(Animation):
         source_graph = cls.extract_graph(source_subgraph)
         target_graph = cls.extract_graph(target_subgraph)
 
+
         scene_manager = SceneManager.scene_manager()
         
         transform_manager = scene_manager.add_transform_manager(
@@ -648,22 +651,6 @@ class AbstractDynamicTransform(Animation):
 
         participants = { mobject.id for mobject in source_subgraph.dynamic_mobjects }.union({ mobject.id for mobject in target_subgraph.dynamic_mobjects })
         animation = cls(transform_manager, participants, **kwargs)
-
-        """
-        def clean_scene(scene: Scene):
-            transform_manager.restructure_scene()
-
-            for id in participants:
-                if target_graph.contains(id):
-                    transform_manager.mobject_recovery.recover_mobject(target_graph.find_dynamic_mobject(id).identity)
-
-                if source_graph.contains(id):
-
-                    cdm = source_graph.find_dynamic_mobject(id)
-                    unmorph = quick_morph(cdm)
-                    scene_manager.scene.scene_add(cdm).scene_remove(cdm)
-                    unmorph()
-        """
 
         def begin_scene(scene: Scene):
             # in case otherwise empty composite is configured to have direct submobjects. 
@@ -713,12 +700,6 @@ class AbstractDynamicTransform(Animation):
 
         animation = cls(transform_manager, participants, **kwargs)
 
-        """
-        def clean_scene(scene: Scene):
-            transform_manager.restructure_scene()
-            transform_manager.unrestructure_mobjects_(participants)
-        """
-
         def begin_scene(scene: Scene):
             # in case otherwise empty composite is configured to have direct submobjects. 
             transform_manager.restructure_participant_observers(participants)
@@ -742,7 +723,8 @@ class AbstractDynamicTransform(Animation):
         self.provided_run_time = run_time
         if run_time is None:
             run_time = 1
-
+        
+        self.transform_manager = transform_manager
         self.config = DynamicTransformConfiguration(transform_manager, ids)
         self.container_group = VGroup(*self.config.transform_containers.values())
 
@@ -812,12 +794,15 @@ class AbstractDynamicTransform(Animation):
         for container in self.config.transform_containers.values():
             scene.scene_add(container).scene_remove(container)
 
+        scene.scene_add(self.animation.mobject)
         self.super_mobject.submobjects = [ self.animation.mobject ]
+        
         
         if self.provided_run_time is not None:
             self.run_time = self.provided_run_time
         else:
             self.run_time = self.animation.run_time
+                
 
         # having this causes thicker-overlay appearence, even on independent mobjects. 
         #scene.add(self.animation.mobject)
@@ -868,6 +853,35 @@ class GraphTransformDescriptor():
     ):
         self.source_graph = source_graph
         self.target_graph = target_graph
+
+    def prevent_ids(self):
+
+        ids = self.ids()
+        prevent_ids = set()
+        for id in ids:
+
+            # given x' -> x, is_remover(x') is false. This is_scene_remover might cause problems later
+            if self.is_scene_remover(id):
+                
+                auto_disconnect_source_id = self.source_graph.find_dynamic_mobject(id).source_id
+
+                for mobject in self.target_graph.dynamic_mobjects:
+
+                    
+                    if mobject.source_id is not None and mobject.source_id == id:
+                        if id not in ids:
+                            raise Exception()
+                        if id in ids:
+                            prevent_ids.add(id) # fix y in xyxyxy example
+
+                    
+                    if auto_disconnect_source_id is not None and mobject.id == auto_disconnect_source_id:
+                        if id not in ids: 
+                            raise Exception()
+                        if id in ids: # uh what is with the id in ids?
+                            prevent_ids.add(id) # fix x in xyxyxy example
+
+        return prevent_ids
 
     def ids(self):
         return { mobject.id for mobject in self.source_graph.mobjects }.union({ mobject.id for mobject in self.target_graph.mobjects })
@@ -1087,7 +1101,14 @@ class DynamicMobjectTransformItinerary():
         if not self.is_initialized():
             raise Exception()
         
-        animation = self.animation_generator(self.source_mobject.copy(), self.target_mobject.copy())
+        source_mobject = self.source_mobject.copy()
+        target_mobject = self.target_mobject.copy()
+
+        if self.id in self.config.transform_descriptor.prevent_ids():
+            source_mobject.set_opacity(0)
+            target_mobject.set_opacity(0)
+        
+        animation = self.animation_generator(source_mobject, target_mobject)
         animation.run_time = self.track.run_time
         container_animation = ExtractTransform(self.config.transform_containers[self.id], animation)
         return container_animation
@@ -1400,10 +1421,10 @@ class TransformInStages(AbstractDynamicTransform):
             if self.config.transform_descriptor.is_transformer(itinerary.id):
                 itinerary.set_track(self.transformer_track)
 
-            if itinerary.id in self.config.prevent_ids:
-                itinerary.track.set_parent(None)
-                itinerary.source_mobject = VMobject()
-                itinerary.target_mobject = VMobject()
+            #if itinerary.id in self.config.prevent_ids:
+            #    itinerary.track.set_parent(None)
+            #    itinerary.source_mobject = VMobject()
+            #    itinerary.target_mobject = VMobject()
 
         if not self.remover_track.has_mobject_with_points():
             self.remover_track.set_parent(None)
