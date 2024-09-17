@@ -124,12 +124,16 @@ class AbstractDynamicTransformManager():
         
         self.transform_descriptor = GraphTransformDescriptor(self.source_graph.copy(), self.target_graph.copy())
         self.transform_containers = { id: MyObject() for id in self.transform_descriptor.ids() }
+
+        for tc in self.transform_containers.values():
+            self.scene.scene_add(tc)
+            
         ZARR.extend([ x for x in self.transform_containers.values()])
 
         self.transform_observers = self.observers()
         self.save_recover_point()
         self.restructure_scene()
-        self.revert_mobjects()
+        #self.revert_mobjects()
         self.create_transform_containers()
         self.restructure_mobjects()
 
@@ -143,6 +147,12 @@ class AbstractDynamicTransformManager():
 
     def restructure_scene(self):
 
+        for mobject in self.transform_observers:
+            current_dynamic_mobject = mobject.current_dynamic_mobject
+            current_dynamic_mobject.submobjects = []
+            self.scene.scene_add(current_dynamic_mobject).scene_remove(current_dynamic_mobject)
+        
+        """
         scene_recover_mobjects = RecoverMobject()
 
         for mobject in self.transform_observers:
@@ -158,6 +168,7 @@ class AbstractDynamicTransformManager():
 
         for mobject in self.transform_observers:
             scene_recover_mobjects.recover_mobject(mobject)
+        """
 
     def save_recover_point(self):
         self.recover_mobjects_ = RecoverMobject()
@@ -179,7 +190,7 @@ class AbstractDynamicTransformManager():
             if not self.transform_descriptor.is_introducer(id):
                 self.transform_containers[id].points = self.transform_descriptor.find_source_dynamic_mobject(id).copy().points
                 self.transform_containers[id].submobjects = [ self.transform_descriptor.find_source_dynamic_mobject(id).direct_submobject_tree().copy() ]
-                YARR.extend(self.transform_containers[id].submobjects)
+                #YARR.extend(self.transform_containers[id].submobjects)
 
     def restructure_mobjects(self):
         #pass
@@ -311,7 +322,10 @@ class ProgressTransformManager(AbstractDynamicTransformManager):
     def end_transforms(self):
 
         print("end transforms")
-        mycontains(111)
+        #mycontains(111)
+
+        for container in self.transform_containers.values():
+            self.scene.scene_add(container).scene_remove(container)
         
 
         # removal all mobjects, in manner that prevents scene restructuring
@@ -319,8 +333,7 @@ class ProgressTransformManager(AbstractDynamicTransformManager):
             mobject.submobjects = []
             self.scene.scene_add(mobject).scene_remove(mobject)
 
-        for container in self.transform_containers.values():
-            self.scene.scene_add(container).scene_remove(container)
+        
 
         self.recover_mobjects()
 
@@ -330,7 +343,7 @@ class ProgressTransformManager(AbstractDynamicTransformManager):
 
 
         super().end_transforms()
-        mycontains(111)
+        #mycontains(111)
 
 class ReplacementTransformManager(AbstractDynamicTransformManager):
     
@@ -665,10 +678,10 @@ class AbstractDynamicTransform(Animation):
             for mobject in mobjects:
                 mobject.submobjects = []
 
-                if transform_manager.transform_descriptor.is_scene_remover(mobject.id):
-                    scene.scene_add(mobject).scene_remove(mobject)
-                else:
-                    scene.scene_add(mobject)
+                #if transform_manager.transform_descriptor.is_scene_remover(mobject.id):
+                #    scene.scene_add(mobject).scene_remove(mobject)
+                #else:
+                #    scene.scene_add(mobject)
                 #if transform_manager.transform_descriptor.is_scene_introducer(mobject.id):
                 #    scene.scene_add(mobject)
 
@@ -847,7 +860,11 @@ class AbstractDynamicTransform(Animation):
 
     def _setup_scene(self, scene):
         self.animation = self.config.build()
-        self.super_mobject.submobjects = self.animation.mobject
+
+        for container in self.config.transform_containers.values():
+            scene.scene_add(container).scene_remove(container)
+
+        self.super_mobject.submobjects = [ self.animation.mobject ]
         
         if self.provided_run_time is not None:
             self.run_time = self.provided_run_time
@@ -871,6 +888,10 @@ class AbstractDynamicTransform(Animation):
 
         scene.scene_add(self.super_mobject).scene_remove(self.super_mobject)
         scene.scene_add(self.animation.mobject).scene_remove(self.animation.mobject)
+
+        for container in self.config.transform_containers.values():
+            scene.scene_add(container)
+
         # scene add remove animation.mobject may remove parts of the GOC.
         # I am going to do .restructure_scene() on the clean_scene() to try to add it back
 
