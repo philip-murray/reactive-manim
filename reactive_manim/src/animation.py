@@ -242,6 +242,7 @@ class AbstractDynamicTransformManager():
         pass
 
     def matches_construction_guard(self, next_transform_manager: AbstractDynamicTransformManager):
+        return # todo
 
         if not (
             self.source_graph is next_transform_manager.source_graph and
@@ -297,6 +298,9 @@ class ProgressTransformManager(AbstractDynamicTransformManager):
             source_graph=self.progress_manager.source_graph,
             target_graph=self.progress_manager.target_graph
         )
+
+        self.source_graph = None
+        self.target_graph = None
 
     def begin_transforms(self):
 
@@ -427,8 +431,11 @@ class GraphProgressManager():
         However, the source_graph is saved from graph.copy() prior to the user setting the target_id flag in edit-mode
         This updates the source_graph with target_id flags set by the user in edit-mode
         """
+    
+        mobject_union = [ mobject.current_dynamic_mobject for mobject in set(self.source_mobjects.values()).union(set(self.target_mobjects.values())) ]
 
-        for mobject in self.graph.dynamic_mobjects: # stack-mobjects
+        # switched array from self.graph.dynamic_mobjects (which does not include removers), to mobject_union, after exponent example didn't work as expected
+        for mobject in mobject_union: # stack-mobjects
             if (mobject.target_id is not None) and self.source_graph.contains(mobject.id):
                 self.source_graph.find_dynamic_mobject(mobject.id).target_id = mobject.target_id
 
@@ -1435,4 +1442,5 @@ class TransformInStages(AbstractDynamicTransform):
         if not self.introducer_track.has_mobject_with_points():
             self.introducer_track.set_parent(None)
         
+        print("SETTIGN LAG RATIO ", self._lag_ratio)
         self.default_track.set_lag_ratio(self._lag_ratio)

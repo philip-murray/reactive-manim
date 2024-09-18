@@ -2,7 +2,7 @@ from .src.animation import *
 from .src.dynamic_mobject import *
 from .src.dynamic_tex_mobject import *
 
-from .src.scene import Scene, mycontains
+from .src.scene import Scene
 
 from manim import config, logger
 import atexit
