@@ -226,6 +226,9 @@ class GraphInvalidationManager():
         self.composite_array = []
         self.m = {}
 
+    def notify(self):
+        self.graph.begin_invalidation()
+
 
     def begin_entrance_invalidation(self, mobject: MobjectIdentity):
 
@@ -274,7 +277,7 @@ class GraphInvalidationManager():
                 raise Exception()
         
             self.in_invalidation = True
-            self.graph.begin_invalidation()
+            self.notify()
 
             self.auto_disconnect_replacements = []
             
@@ -302,6 +305,23 @@ class GraphInvalidationManager():
                 if child.parent is not old_parent:
                     raise Exception()
                 
+                if old_parent.graph is not self.graph:
+                #   old_parent.graph.begin_invalidation()
+                    old_parent.graph.begin_state_invalidation() # this will save_centers()
+                    old_parent.begin_entrance_invalidation() # this will call old_parent.graph.notify_subscribers()
+                    
+                    """
+                    begin_state_invalidation is SAVE_CENTERS
+                    begin_entrance_invalidation will call old_parent.graph.NOTIFY_SUBSCRIBERS
+
+                    SAVE_CENTERS is called by set_dynamic_mobject() prior to begin_entrance_invalidation() handoff, 
+                    because set_dynamic_mobject is checking for (MobjectIdentity.current == None) condition on first construction
+                    therefore, we need to change DynamicMobject -> MobjectIdentity -> Graph construction to just create an initial empty state
+                    and then DynamicMobject will call begin_entrance_invalidation() to render
+                    """
+                    
+                    # will not call save_centers() 
+                
                 old_parent.change_parent_mobject = child #MI
                 old_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone() #DM
 
@@ -309,6 +329,9 @@ class GraphInvalidationManager():
                     old_parent.invalidate(isolate=True) # alrady in entrance_invalidation
                     inv_q.append(old_parent)
                 else:
+                    # Attempt to un-restructure terms in tex2, prior to handoff to tex3.
+                    #old_parent.graph.begin_invalidation()
+                    #old_parent.graph.begin_state_invalidation()
                     print(old_parent, child, new_parent, child_clone)
                     print(old_parent, old_parent.graph, old_parent.graph.invalidation_manager.in_invalidation)
                     old_parent.begin_entrance_invalidation()

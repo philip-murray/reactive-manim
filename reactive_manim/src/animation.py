@@ -73,10 +73,24 @@ class AbstractDynamicTransformManager():
         self.target_graph = target_graph
         self.scene_manager = SceneManager.scene_manager()
         self.scene = self.scene_manager.scene
-    
 
     def begin_transforms(self):
         
+        """
+        INVALIDATION POLICY
+        In the following example:
+        
+        from_copy(tex1, tex2)
+        from_copy(tex2, tex3)
+
+        tex2 still be in a restructured state, so  self.source_graph.begin_invalidation() is called to unrestructure tex2
+        so that the GraphTransformDescriptor(tex2, tex3) is not corrupted
+
+        Maybe SceneManager should save a unrestructured copy of every graph?
+        """
+        self.source_graph.begin_invalidation()
+        self.source_graph.begin_state_invalidation()
+
         # begin_transforms() runs on the first partial-transform call, i.e. scene.play(TransformInStages.some_constructor(tex)) in a series of some_constructor-partial-transforms
         # Subsequent partial-transforms will skip to animating the existing transform_containers, that have not yet been animated by previous partial-transforms
 
@@ -259,6 +273,7 @@ class AbstractDynamicTransformManager():
 
 
 """
+
 The proper notation for partial-transformations should look like this:
 
 animation = TransformInStages.progress(tex)
