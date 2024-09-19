@@ -9,12 +9,19 @@ from .helpers import *
 from manim import *
 
 
+
+
+
 class DynamicMobjectGraph():
 
     def __init__(self):
         self.root_mobjects: Set[MobjectIdentity] = []
         self.subscriptions: Dict[UUID, Callable[[DynamicMobjectGraph], None]] = {}
         self.id = None
+
+        self.prevent_match_style_update = False
+        self.invalidation_manager = GraphInvalidationManager(self)
+    
     
     @property
     def mobjects(self) -> List[MobjectIdentity]:
@@ -90,8 +97,8 @@ class DynamicMobjectGraph():
 
     def begin_state_invalidation(self):
 
-        for function in list(self.subscriptions.values()).copy():
-            function(self)
+        #for function in list(self.subscriptions.values()).copy():
+        #    function(self)
 
         for mobject in self.mobjects:
             try:
@@ -170,9 +177,10 @@ class DynamicMobjectGraph():
             graph2.root_mobjects = set()
             graph1.root_mobjects = graph1.root_mobjects.union(graph2_root_mobjects)
 
-        graph1.root_mobjects.remove(child) ###
-        child.graph = None
-
+        if child in graph1.root_mobjects:
+            graph1.root_mobjects.remove(child) ###
+            child.graph = None
+        
         parent.children.add(child)
         child.parent = parent
 
@@ -185,15 +193,179 @@ class DynamicMobjectGraph():
         graph.root_mobjects = { child }
         child.graph = graph
 
+class GraphInvalidationManager():
+    
+    def __init__(
+        self,
+        graph
+    ):
+        self.in_invalidation = False
+        self.graph = graph
+        self.auto_disconnect_replacements = []
+        self.composite_array = []
+        self.stack = []
+        self.m = {}
+        
+
+        self.current_invalidator = None
+
+    def composite_edit(self, mobject: MobjectIdentity):
+        self.stack.append(mobject)
+        self.composite_array.append(mobject)
+        self.m[mobject] = self.depth()
+
+    def depth(self):
+        return len(self.stack)
+    
+    def apply_composite_invalidation(self):
+        composite_sorted = sorted(set(self.composite_array), key=lambda x: self.m[x], reverse=True)
+
+        for mobject in composite_sorted:
+            mobject.invalidate(isolate=True)
+
+        self.composite_array = []
+        self.m = {}
+
+
+    def begin_entrance_invalidation(self, mobject: MobjectIdentity):
+
+        
+        #print("BEGIN ENTRANCE INVAL")
+        if self.graph.id == "t1":
+            print("BEGIN ENTRANCE INVAL")
+
+        
+        
+        """
+        def stack_not_empty():
+            if self.stack[-1] is not mobject:
+                raise Exception()
+            
+            self.stack.pop()
+
+            if len(self.stack) == 0:
+                self.in_invalidation = True
+                self.apply_composite_invalidation()
+                self.in_invalidation = False
+
+                return True
+            return False
+
+        """
+
+        if len(self.stack) > 0:
+
+            if self.stack[-1] is not mobject:
+                raise Exception()
+            
+            self.stack.pop()
+
+            if len(self.stack) > 1:
+                return
+
+            if len(self.stack) == 0:
+                self.in_invalidation = True
+                self.apply_composite_invalidation()
+                self.in_invalidation = False
+                # goto if True
+        
+        if True:
+            if self.in_invalidation:
+                raise Exception()
+        
+            self.in_invalidation = True
+            self.graph.begin_invalidation()
+
+            self.auto_disconnect_replacements = []
+            
+            if self.current_invalidator is not None:
+                raise Exception()
+            
+            self.current_invalidator = mobject
+            mobject.invalidate()
+            self.current_invalidator = None
+
+            #this all relies in the assumption that only on begin_entrance_invalidation, is auto-disconnect potentially required
+            inv_q = []
+
+            for (old_parent, child, new_parent, child_clone) in self.auto_disconnect_replacements:
+
+                print(old_parent.id, child.id, new_parent.id, child_clone.id)
+                old_parent: MobjectIdentity = old_parent
+
+                if new_parent is not mobject:
+                    raise Exception()
+                
+                if child_clone.parent is not new_parent:
+                    raise Exception()
+                
+                if child.parent is not old_parent:
+                    raise Exception()
+                
+                old_parent.change_parent_mobject = child #MI
+                old_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone() #DM
+
+                if old_parent.graph is self.graph:
+                    old_parent.invalidate(isolate=True) # alrady in entrance_invalidation
+                    inv_q.append(old_parent)
+                else:
+                    print(old_parent, child, new_parent, child_clone)
+                    print(old_parent, old_parent.graph, old_parent.graph.invalidation_manager.in_invalidation)
+                    old_parent.begin_entrance_invalidation()
+
+                if child.graph is old_parent.graph or child.graph is new_parent.graph:
+                    raise Exception()
+                
+                new_parent.change_parent_mobject = child_clone
+                new_parent.change_parent_mobject_replacement = child.current_dynamic_mobject
+                
+                new_parent.invalidate(isolate=True)
+
+            
+
+            mobject.invalidate()
+            for m in inv_q:
+                m.invalidate() 
+
+            self.auto_disconnect_replacements = [] 
+            self.in_invalidation = False
+            
+
+"""
+class GraphManager():
+    
+    def __init__(
+        self:
+    ):
+        self.managers: Dict[DynamicMobjectGraph, GraphUpdateManager] = {}
+
+    def begin(self, mobject: MobjectIdentity):
+        if mobject.graph not in self.managers:
+"""
+            
+            
+
+        
+
+
+
+
 
 class MobjectIdentity(VMobject):
 
+    def composite_edit(self):
+        self.graph.invalidation_manager.composite_edit(self)
+
     def __init__(self, mobject: DynamicMobject):
+
 
         super().__init__()
         self.id = uuid.uuid4()
         self.source_ids: List[UUID] = []
         self.target_ids: List[UUID] = [] 
+
+
+        self.match_style_invalidate_flag = False
 
 
         self.parent: MobjectIdentity | None = None
@@ -268,11 +440,7 @@ class MobjectIdentity(VMobject):
             self.graph.begin_state_invalidation()
         
         if self.current is not None and self.current is not mobject:
-            #self.graph.begin_state_invalidation()
             self.current.submobjects = [ self ]
-
-        #self.graph.begin_invalidation()
-        #self.graph.begin_state_invalidation()
 
         self.current = mobject
         self.current.mobject_identity = self
@@ -281,7 +449,9 @@ class MobjectIdentity(VMobject):
         self.begin_entrance_invalidation()
 
     def begin_entrance_invalidation(self):
-        self.invalidate(terminate_propogation_mobject=self.terminate_propogation_mobject)
+
+        self.graph.invalidation_manager.begin_entrance_invalidation(self)
+        #self.invalidate(terminate_propogation_mobject=self.terminate_propogation_mobject)
         self.terminate_propogation_mobject = None
 
     def complete_child_registration(self):
@@ -289,7 +459,8 @@ class MobjectIdentity(VMobject):
 
     def invalidate(
             self, 
-            terminate_propogation_mobject: MobjectIdentity | None = None
+            terminate_propogation_mobject: MobjectIdentity | None = None,
+            isolate=False
         ):
         self.next_children: List[MobjectIdentity] = []
         self.current_dynamic_mobject.execute_compose()
@@ -298,7 +469,8 @@ class MobjectIdentity(VMobject):
             # terminate propogation
             pass
         else:
-            self.invalidate_parent()
+            if not isolate:
+                self.invalidate_parent()
 
     def invalidate_parent(self):
         if self.parent is not None:
@@ -310,6 +482,12 @@ class MobjectIdentity(VMobject):
 
         if mobject.identity in self.next_children:
             return mobject.clone()
+        
+        # mobject has another parent
+        if mobject.identity.parent is not None and mobject.identity.parent is not self:
+            clone = mobject.clone()
+            self.graph.invalidation_manager.auto_disconnect_replacements.append((mobject.identity.parent, mobject.identity, self, clone.identity))
+            return clone
         
         if mobject.identity is self.change_parent_mobject:
             replacement = self.change_parent_mobject_replacement
@@ -342,15 +520,34 @@ class MobjectIdentity(VMobject):
     def add_parent_connection(parent: MobjectIdentity, child: MobjectIdentity):
         
         if child.parent is not None:
+
+            raise Exception()
+            parent.graph.prevent_match_style_update = True
+            parent.match_style_invalidate_flag = True
+
             child.graph.begin_invalidation()
             child.parent.change_parent_mobject = child
             child.parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone()
-            child.parent.terminate_propogation_mobject = parent
+
+            
+            if child.parent.parent is not None:
+                child.parent.terminate_propogation_mobject = child.parent.parent
+
+            #child.parent.terminate_propogation_mobject = parent
             child.parent.graph.begin_state_invalidation()
+
+            graph1 = child.parent.graph
 
             child_parent = child.parent
             child.parent.invalidate()
             child_parent.terminate_propogation_mobject = None
+
+            graph2 = child.graph
+
+            if graph1 is graph2:
+                raise Exception()
+
+            child.invalidate()
         
         parent.graph.connect_parent_child(parent, child)
     
@@ -450,11 +647,12 @@ class DynamicMobject(VMobject):
         self._save_y: float | None = None
         self.arrange_function = None
 
-        self.in_composite_edit = False
 
+        self.super_init = True
         super().__init__(**kwargs)
+        self.super_init = False
+
         self.mobject_identity: MobjectIdentity | None = None
-        
         MobjectIdentity(self)
 
         if id is not None:
@@ -506,6 +704,14 @@ class DynamicMobject(VMobject):
             )
 
     def invalidate(self) -> Self:
+        
+        if self.super_init: # During DynamicMobject().VMobject().__init__, the MobjectIdentity is not yet initialized
+            return
+        
+        if self.graph.invalidation_manager.in_invalidation:
+            print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
+            return 
+
         self.is_current_dynamic_mobject_guard()  
         self.identity.set_dynamic_mobject(self)
         return self
@@ -829,32 +1035,54 @@ class DynamicMobject(VMobject):
         self.arrange_function = None
         self.invalidate()
 
-    def begin_composite_edit(self):
-        for mobject in self.get_dynamic_family():
-            mobject.in_composite_edit = True
-
-    def end_composite_edit(self):
-        for mobject in self.get_dynamic_family():
-            mobject.in_composite_edit = False
 
     
+    def composite_edit(self):
+        
+        if self.super_init:
+            return
+        
+        if self.graph.invalidation_manager.in_invalidation:
+            print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
+            return 
+        
+        self.identity.composite_edit()
+
     def set_color(
-        self, color: ParsableManimColor = YELLOW_C, family: bool = True, simple=False
+        self, color: ParsableManimColor = YELLOW_C, family: bool = True
+    ) -> Self:
+
+        self.composite_edit()
+        super().set_color(color=color, family=family)
+        self.invalidate()
+        return self
+    
+    def set_fill(
+        self,
+        color: ParsableManimColor | None = None,
+        opacity: float | None = None,
+        family: bool = True,
     ) -> Self:
         
-        if not self.in_composite_edit:
-            self.begin_composite_edit()
-            self.invalidate()
-            super().set_color(color=color, family=family)
-
-            if not simple:
-                self.invalidate()
-            self.end_composite_edit()
-        else:
-            super().set_color(color=color, family=family)
-
+        self.composite_edit()
+        super().set_fill(color=color, opacity=opacity, family=family)
+        self.invalidate()
         return self
 
+    def set_stroke(
+        self,
+        color: ParsableManimColor = None,
+        width: float | None = None,
+        opacity: float | None = None,
+        background=False,
+        family: bool = True,
+    ) -> Self:
+        
+        self.composite_edit()
+        super().set_stroke(color=color, width=width, opacity=opacity, background=background, family=family)
+        self.invalidate()
+        return self
+        
 def extract_direct_dynamic_mobjects(mobject: Mobject):
     dynamic_mobjects: Set[DynamicMobject] = set()
 

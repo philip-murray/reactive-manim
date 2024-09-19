@@ -251,10 +251,14 @@ class MathTex(MathComponent):
     def __iter__(self):
         return iter(self._terms)
 
+AR = []
+BR = []
+
 class MathString(MathEncodable):
 
     def __init__(self, tex_string: str, **kwargs):
         self.tex_string = tex_string
+        self.store_sm_count =8
         
         mobject = SingleStringMathTex(tex_string)
         self.submobject_group = mobject
@@ -271,15 +275,30 @@ class MathString(MathEncodable):
 
     def accept_mobject_from_rendered_tex_string(self, mobject: VMobject) -> int:
 
+
+
         submobject_count = len(SingleStringMathTex(self.tex_string))
+        #self.store_sm_count = submobject_count
         submobjects = mobject.submobjects[:submobject_count]
-        self.submobject_group = VGroup(*submobjects).match_style(self.submobject_group)
+
+        #if self.id == "Y":
+        #    AR.append(VGroup(*submobjects).copy())
+
+        if self.graph.prevent_match_style_update:
+            # don't match style
+            pass
+        else:
+            self.submobject_group = VGroup(*submobjects).match_style(self.submobject_group)
 
         self.submobjects =  [ *submobjects ]
+
+        #if self.id == "Y":
+        #    BR.append(self.submobject_group.copy())
+
         return submobject_count
 
     def __repr__(self):
-        return f"MathString({self.id})"
+        return f"MathString({self.id, self.tex_string, self.store_sm_count})"
 
 class MathStringFragment(MathEncodable):
 
