@@ -73,7 +73,7 @@ class AbstractDynamicTransformManager():
         self.target_graph = target_graph
         self.scene_manager = SceneManager.scene_manager()
         self.scene = self.scene_manager.scene
-
+    
     def begin_transforms(self):
         
         """
@@ -193,7 +193,7 @@ class AbstractDynamicTransformManager():
             container.submobjects = []
         else:
             container.points = self.transform_descriptor.find_source_dynamic_mobject(id).copy().points
-            container.submobjects = self.transform_descriptor.find_source_dynamic_mobject(id).direct_submobject_tree().copy()
+            container.submobjects = self.transform_descriptor.find_source_dynamic_mobject(id).direct_submobjects().copy()
 
     def save_recover_point(self):
         self.mobject_recovery = RecoverMobject()
@@ -212,7 +212,7 @@ class AbstractDynamicTransformManager():
         for observer in self.graph.dynamic_mobjects:
             self.recover_mobject(observer)
 
-        for mobject in self.graph.root_mobjects:
+        for mobject in self.graph.root_dynamic_mobjects():
             self.scene.scene_add(mobject)
 
         # Introduction via scene.add() creates a progress manager,
@@ -233,6 +233,7 @@ class AbstractDynamicTransformManager():
 
     def restore_participant_observers(self, participant_observers: Set[UUID]):
 
+        # maybe we should only be restoring target_observers?
         for mobject in self.observers():
             if mobject.id in participant_observers:
                 self.mobject_recovery.recover_mobject(mobject)
@@ -369,6 +370,14 @@ class ReplacementTransformManager(AbstractDynamicTransformManager):
     
     def constructor_name(self) -> str:
         return "replacement_transform"
+    
+    def restore_participant_observers(self, participant_observers: Set[UUID]):
+
+        # maybe we should only be restoring target_observers?
+        for mobject in self.observers():
+            if mobject.id in participant_observers:
+                if mobject in self.target_graph.dynamic_mobjects:
+                    self.mobject_recovery.recover_mobject(mobject)
 
 class FromCopyTransformManager(AbstractDynamicTransformManager):
 
@@ -547,6 +556,11 @@ def attach_progress_interceptors_core(scene: Scene) -> SceneManager:
         def _add(*mobjects: Mobject) -> Scene:
             
             for mobject in mobjects:
+                
+                for q in mobject.get_family():
+                    if isinstance(q, MobjectIdentity): 
+                        raise Exception()
+
                 for m in extract_direct_dynamic_mobjects(mobject):
                     if isinstance(m, DynamicMobject):
                         scene_manager.add(m)
@@ -1100,10 +1114,10 @@ class DynamicMobjectTransformItinerary():
         self.track = AnimationTrack(config, parent_track=self.config.root_track, run_time=1, is_leaf_track=True, name=self.id, id=self.id)
 
         if self.config.transform_descriptor.has_source(self.id):
-            self.source_mobject = self.config.transform_descriptor.find_source_dynamic_mobject(self.id).direct_submobject_tree().copy()
+            self.source_mobject = self.config.transform_descriptor.find_source_dynamic_mobject(self.id).direct_submobjects().copy()
 
         if self.config.transform_descriptor.has_target(self.id):
-            self.target_mobject = self.config.transform_descriptor.find_target_dynamic_mobject(self.id).direct_submobject_tree().copy()
+            self.target_mobject = self.config.transform_descriptor.find_target_dynamic_mobject(self.id).direct_submobjects().copy()
             
     def set_animation_generator(self, animation_generator):
         self.animation_generator = animation_generator
@@ -1166,7 +1180,7 @@ class ItinerarySelectionInterceptor():
         if isinstance(mobject, DynamicMobject):
             for descendant in mobject.get_dynamic_family():
                 if descendant.id in self.itineraries:
-                    self.itineraries[descendant.id].source_mobject = descendant.direct_submobject_tree().copy()
+                    self.itineraries[descendant.id].source_mobject = descendant.direct_submobjects().copy()
         else:
             for itinerary in self.itineraries.values():
                 itinerary.source_mobject = mobject.copy()
@@ -1178,7 +1192,7 @@ class ItinerarySelectionInterceptor():
         if isinstance(mobject, DynamicMobject):
             for mobject in mobject.get_dynamic_family():
                 if mobject.id in self.itineraries:
-                    self.itineraries[mobject.id].target_mobject = mobject.direct_submobject_tree().copy()
+                    self.itineraries[mobject.id].target_mobject = mobject.direct_submobjects().copy()
         else:
             for itinerary in self.itineraries.values():
                 itinerary.target_mobject = mobject.copy()
@@ -1433,11 +1447,11 @@ class TransformInStages(AbstractDynamicTransform):
             itinerary.set_animation_generator(lambda source, target: Transform(source, target))
 
             if self.config.transform_descriptor.is_remover(itinerary.id):
-                itinerary.target_mobject = self.config.source_graph.find_dynamic_mobject(itinerary.id).direct_submobject_tree().copy().fade(1)
+                itinerary.target_mobject = self.config.source_graph.find_dynamic_mobject(itinerary.id).direct_submobjects().copy().fade(1)
                 itinerary.set_track(self.remover_track)
 
             if self.config.transform_descriptor.is_introducer(itinerary.id):
-                itinerary.source_mobject = self.config.target_graph.find_dynamic_mobject(itinerary.id).direct_submobject_tree().copy().fade(1)
+                itinerary.source_mobject = self.config.target_graph.find_dynamic_mobject(itinerary.id).direct_submobjects().copy().fade(1)
                 itinerary.set_track(self.introducer_track)
 
             if self.config.transform_descriptor.is_transformer(itinerary.id):

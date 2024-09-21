@@ -1,18 +1,30 @@
 from __future__ import annotations
 from abc import abstractmethod
 from typing_extensions import *
-from typing import List, Dict, overload
+from typing import List, Dict, overload, Tuple
 import copy
 import numpy as np
 from .helpers import *
 
 from manim import *
+import functools
 
+def reactive(dynamic_mobject_method):
+    @functools.wraps(dynamic_mobject_method)
+    def interceptor(self: DynamicMobject, *args, **kwargs):
+        self.begin_edit()
+        result = dynamic_mobject_method(self, *args, **kwargs)
+        self.end_edit()
+        return result
+    return interceptor
 
 
 
 
 class DynamicMobjectGraph():
+    
+    def in_edit(self):
+        return self.edit_manager.in_edit() 
 
     def __init__(self):
         self.root_mobjects: Set[MobjectIdentity] = []
@@ -20,7 +32,11 @@ class DynamicMobjectGraph():
         self.id = None
 
         self.prevent_match_style_update = False
-        self.invalidation_manager = GraphInvalidationManager(self)
+        self.edit_manager = GraphEditManager(self)
+
+
+        self.auto_disconnect_queue: List[Tuple[MobjectIdentity, MobjectIdentity]] = []
+        self.composite_invalidation_queue = []
     
     
     @property
@@ -33,6 +49,9 @@ class DynamicMobjectGraph():
                 mobjects.add(mobject)
         
         return list(mobjects)
+
+    def root_dynamic_mobjects(self):
+        return [ mobject.current_dynamic_mobject for mobject in self.root_mobjects ]
 
     @property
     def dynamic_mobjects(self) -> List[DynamicMobject]:
@@ -193,121 +212,128 @@ class DynamicMobjectGraph():
         graph.root_mobjects = { child }
         child.graph = graph
 
-class GraphInvalidationManager():
-    
+
+class AutoDisconnectPacket():
+
     def __init__(
         self,
-        graph
+        current_parent: MobjectIdentity,
+        next_parent: MobjectIdentity,
+        child: MobjectIdentity,
+        child_clone: MobjectIdentity
     ):
-        self.in_invalidation = False
-        self.graph = graph
-        self.auto_disconnect_replacements = []
-        self.composite_array = []
-        self.stack = []
-        self.m = {}
-        
+        self.current_parent = current_parent
+        self.next_parent = next_parent
+        self.child = child
+        self.child_clone = child_clone
 
-        self.current_invalidator = None
+    def verify(self, mobject):
 
-    def composite_edit(self, mobject: MobjectIdentity):
-        self.stack.append(mobject)
-        self.composite_array.append(mobject)
-        self.m[mobject] = self.depth()
+        print(self.current_parent.id, self.next_parent.id, self.child.id, self.child_clone.id)
+        print(self.child.parent.id)
 
-    def depth(self):
-        return len(self.stack)
+        print(self.child.parent)
+        print(self.current_parent)
+
+        if self.child.parent is not self.current_parent:
+            raise Exception()
+        if self.child_clone.parent is not self.next_parent:
+            raise Exception()
+        if self.next_parent is not mobject:
+            raise Exception()
+
+    def extract(self):
+        return (self.current_parent, self.next_parent, self.child, self.child_clone)
     
-    def apply_composite_invalidation(self):
-        composite_sorted = sorted(set(self.composite_array), key=lambda x: self.m[x], reverse=True)
 
-        for mobject in composite_sorted:
-            mobject.invalidate(isolate=True)
+class GraphEditManager():
 
-        self.composite_array = []
-        self.m = {}
+    def in_edit(self):
+        return self.in_edit()
 
-    def notify(self):
-        self.graph.begin_invalidation()
+    # INVALIDATION SYSTEM
 
+    def require_edit_mode(self, mobject):
 
-    def begin_entrance_invalidation(self, mobject: MobjectIdentity):
+        if self.mode == "edit":
+            return 
 
+        self.mode = "edit"
+        self.graph.begin_invalidation() # NOTIFY
+        self.graph.begin_state_invalidation()
+
+        self.primary_mobject = mobject
+        self.composite_stack = []
+        self.composite_queue = []
+        self.composite_depth = {}
+
+        self.auto_disconnect_queue = []
         
-        #print("BEGIN ENTRANCE INVAL")
-        if self.graph.id == "t1":
-            print("BEGIN ENTRANCE INVAL")
+    def queue_composite(self, mobject):
+        self.composite_stack.append(mobject)
+        self.composite_queue.append(mobject)
+        self.composite_depth[mobject] = len(self.composite_stack)   
 
+    def begin_edit(self, mobject: MobjectIdentity):
+        self.require_edit_mode(mobject)
+        self.queue_composite(mobject)
+
+    def run_composite_invalidation(self, mobject: MobjectIdentity):
         
-        
-        """
-        def stack_not_empty():
-            if self.stack[-1] is not mobject:
-                raise Exception()
+        self.in_invalidation = True
+        mobject.invalidate(propogate=False)
+        self.in_invalidation = False
+
+        if len(self.auto_disconnect_queue) > 0:
+            raise Exception("Cannot use auto-disconnect in nested-level composite-edit")
+
+    def process_composite_queue(self):
+
+        sorted_composite_queue = sorted(set(self.composite_queue), key=lambda mobject: self.composite_depth[mobject], reverse=True)
+
+        for mobject in sorted_composite_queue:
+            if mobject is not self.primary_mobject:
+                self.run_composite_invalidation(mobject)
+
+        self.composite_queue = []
+        self.composite_stack = []
+        self.composite_depth = {}
+
+    def queue_auto_disconnect(self, packet):
+        self.auto_disconnect_queue.append(packet)
+
+    def process_auto_disconnect_queue(self):
             
-            self.stack.pop()
+        invalidation_queue = []
 
-            if len(self.stack) == 0:
-                self.in_invalidation = True
-                self.apply_composite_invalidation()
-                self.in_invalidation = False
+        for (placeholder, child, next_parent) in self.auto_disconnect_queue:
 
-                return True
-            return False
+            # next_parent.graph is GIM.graph
+            # child.graph and current_parent.graph is/is-not GIM.graph
 
-        """
+            current_parent = child.parent
+            current_parent.prepare_auto_disconnect(child)
 
-        if len(self.stack) > 0:
+            if current_parent.graph is next_parent.graph:
+                current_parent.invalidate(propogate=False)
+                invalidation_queue.append(current_parent)
+            else:
+                current_parent.begin_entrance_invalidation()
 
-            if self.stack[-1] is not mobject:
-                raise Exception()
-            
-            self.stack.pop()
+            next_parent.prepare_auto_disconnect()
+                
 
-            if len(self.stack) > 1:
-                return
-
-            if len(self.stack) == 0:
-                self.in_invalidation = True
-                self.apply_composite_invalidation()
-                self.in_invalidation = False
-                # goto if True
-        
-        if True:
-            if self.in_invalidation:
-                raise Exception()
-        
-            self.in_invalidation = True
-            self.notify()
-
-            self.auto_disconnect_replacements = []
-            
-            if self.current_invalidator is not None:
-                raise Exception()
-            
-            self.current_invalidator = mobject
-            mobject.invalidate()
-            self.current_invalidator = None
-
-            #this all relies in the assumption that only on begin_entrance_invalidation, is auto-disconnect potentially required
+        #this all relies in the assumption that only on begin_entrance_invalidation, is auto-disconnect potentially required
             inv_q = []
 
             for (old_parent, child, new_parent, child_clone) in self.auto_disconnect_replacements:
-
-                print(old_parent.id, child.id, new_parent.id, child_clone.id)
-                old_parent: MobjectIdentity = old_parent
-
-                if new_parent is not mobject:
-                    raise Exception()
                 
-                if child_clone.parent is not new_parent:
-                    raise Exception()
-                
-                if child.parent is not old_parent:
-                    raise Exception()
+                temp = child_clone
+                temp_dm = child_clone.current_dynamic_mobject
                 
                 if old_parent.graph is not self.graph:
                 #   old_parent.graph.begin_invalidation()
-                    old_parent.graph.begin_state_invalidation() # this will save_centers()
+                    #old_parent.graph.begin_state_invalidation() # this will save_centers()
                     old_parent.begin_entrance_invalidation() # this will call old_parent.graph.notify_subscribers()
                     
                     """
@@ -326,14 +352,14 @@ class GraphInvalidationManager():
                 old_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone() #DM
 
                 if old_parent.graph is self.graph:
-                    old_parent.invalidate(isolate=True) # alrady in entrance_invalidation
+                    old_parent.invalidate(propogate=False) # alrady in entrance_invalidation
                     inv_q.append(old_parent)
                 else:
                     # Attempt to un-restructure terms in tex2, prior to handoff to tex3.
                     #old_parent.graph.begin_invalidation()
                     #old_parent.graph.begin_state_invalidation()
                     print(old_parent, child, new_parent, child_clone)
-                    print(old_parent, old_parent.graph, old_parent.graph.invalidation_manager.in_invalidation)
+                    print(old_parent, old_parent.graph, old_parent.graph.edit_manager.in_invalidation)
                     old_parent.begin_entrance_invalidation()
 
                 if child.graph is old_parent.graph or child.graph is new_parent.graph:
@@ -341,8 +367,10 @@ class GraphInvalidationManager():
                 
                 new_parent.change_parent_mobject = child_clone
                 new_parent.change_parent_mobject_replacement = child.current_dynamic_mobject
+
+                next_parent.change_parent_mobject = temp
                 
-                new_parent.invalidate(isolate=True)
+                new_parent.invalidate(propogate=False)
 
             
 
@@ -351,8 +379,94 @@ class GraphInvalidationManager():
                 m.invalidate() 
 
             self.auto_disconnect_replacements = [] 
-            self.in_invalidation = False
+
+    
+    def __init__(
+        self,
+        graph
+    ):
+        self.mode = "default"
+        self.in_invalidation = False
+
+        self.graph = graph
+        self.auto_disconnect_queue: List[AutoDisconnectPacket] = []
+        self.composite_stack: List[MobjectIdentity] = []
+        self.composite_queue: List[MobjectIdentity] = []
+        self.composite_depth: Dict[MobjectIdentity, int] = {}
+    
+    
+    def process_mobject(self, mobject: MobjectIdentity):
+
+        self.in_invalidation = True
+        mobject.invalidate()
+        self.in_invalidation = False
+
+        same_graph_parent_queue: Set[MobjectIdentity] = set()
+
+        for packet in self.auto_disconnect_queue:
+            packet.verify(mobject)
+            current_parent, next_parent, child, child_clone = packet.extract()
+
+            # NEED OLD PARENT NOTIFY/SAVE_CENTERS
+
             
+
+            if current_parent.graph is self.graph:
+                print("A")
+                # with .replace(), this is only used for same-graph handling
+                current_parent.change_parent_mobject = child
+                current_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone().identity
+                current_parent.invalidate(propogate=False)
+                same_graph_parent_queue.append(current_parent)
+            else:
+                # INVALIDATE OLD PARENT BEGIN ENTRANCE IVNAL
+                print("B")
+                current_parent.current_dynamic_mobject.replace(child.current_dynamic_mobject, child.current_dynamic_mobject.clone())
+                
+
+            # the child belongs to neither curr nor next
+            if child.graph is current_parent.graph or child.graph is next_parent.graph:
+                print(child.graph)
+                print(current_parent.graph)
+                print(next_parent.graph)
+                raise Exception()
+
+            next_parent.change_parent_mobject = child_clone
+            next_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.identity
+            next_parent.invalidate(propogate=False)
+        
+        for mobject in same_graph_parent_queue:
+            mobject.invalidate()
+
+        mobject.invalidate()
+        self.auto_disconnect_queue = []
+
+
+
+
+    def end_edit(self, mobject: MobjectIdentity):
+
+        if self.in_invalidation:
+            raise Exception()
+
+        if len(self.composite_stack) == 0 or self.composite_stack[-1] is not mobject:
+                print(len(self.composite_stack) == 0)
+                print(self.composite_stack[-1] is not mobject)
+                print(self.composite_stack[-1], mobject)
+                raise Exception()
+
+        self.composite_stack.pop()
+
+        if len(self.composite_stack) > 0:
+            return
+        
+        if mobject is not self.primary_mobject:
+            raise Exception()
+        
+        self.process_composite_queue()
+        self.process_mobject(mobject)
+
+        self.mode = "default"
 
 """
 class GraphManager():
@@ -372,12 +486,12 @@ class GraphManager():
 
 
 
+class MobjectIdentity():
 
-
-class MobjectIdentity(VMobject):
+   
 
     def composite_edit(self):
-        self.graph.invalidation_manager.composite_edit(self)
+        self.graph.edit_manager.composite_edit(self)
 
     def __init__(self, mobject: DynamicMobject):
 
@@ -399,16 +513,39 @@ class MobjectIdentity(VMobject):
         self.mobject_graph: DynamicMobjectGraph | None = None
         self.mobject_graph = DynamicMobjectGraph()
         self.mobject_graph.root_mobjects = { self }
-
-        self.terminate_propogation_mobject: MobjectIdentity | None = None
-        self.permit_propogation: bool = True
-        self.change_parent_mobject: MobjectIdentity | None = None
-        self.change_parent_mobject_replacement: DynamicMobject | None = None
-    
-        self.mobject_center = VMobject().get_center()
         
-        self.current: DynamicMobject | None = None
-        self.set_dynamic_mobject(mobject)
+        self.permit_propogation: bool = True
+        self._change_parent_mobject: MobjectIdentity | None = None
+        self._change_parent_mobject_replacement: MobjectIdentity | None = None
+    
+        #self.mobject_center = VMobject().get_center()
+        
+        self.current: DynamicMobject | None = mobject
+        self.mobject_center = mobject.get_center()
+        #self.set_dynamic_mobject(mobject)
+
+        self._replace_mobject: DynamicMobject | None = None
+        self._replace_mobject_replacement: DynamicMobject | None = None 
+
+    @property
+    def change_parent_mobject(self):
+        return self._change_parent_mobject
+    
+    @change_parent_mobject.setter
+    def change_parent_mobject(self, mi):
+        if isinstance(mi, DynamicMobject):
+            raise Exception()
+        self._change_parent_mobject = mi
+
+    @property
+    def change_parent_mobject_replacement(self):
+        return self._change_parent_mobject_replacement
+    
+    @change_parent_mobject_replacement.setter
+    def change_parent_mobject_replacement(self, mi):
+        if isinstance(mi, DynamicMobject):
+            raise Exception()
+        self._change_parent_mobject_replacement = mi
 
     def descendants(self) -> List[MobjectIdentity]:
         descendants: List[MobjectIdentity] = []
@@ -459,70 +596,93 @@ class MobjectIdentity(VMobject):
         if mobject.mobject_identity is not None and mobject.mobject_identity is not self:
             raise Exception()
         
-        if self.current is not None:
-            self.graph.begin_state_invalidation()
+        """
+        So, begin_state_invalidation SAVE_CENTERS must be called prior to setting the new dynamic-mobject? 
+        If GraphInvalidationManager.begin_entrance_invalidation() does SAVE_CENTERS, 
+        then by that point, the Mi already has a new DM with a new center? 
+        """
         
-        if self.current is not None and self.current is not mobject:
-            self.current.submobjects = [ self ]
-
         self.current = mobject
         self.current.mobject_identity = self
-        self.submobjects = [ self.current ]
-
-        self.begin_entrance_invalidation()
 
     def begin_entrance_invalidation(self):
 
-        self.graph.invalidation_manager.begin_entrance_invalidation(self)
-        #self.invalidate(terminate_propogation_mobject=self.terminate_propogation_mobject)
-        self.terminate_propogation_mobject = None
+        self.graph.edit_manager.begin_entrance_invalidation(self)
+
 
     def complete_child_registration(self):
         self.set_children(self.next_children)
 
-    def invalidate(
-            self, 
-            terminate_propogation_mobject: MobjectIdentity | None = None,
-            isolate=False
-        ):
+    def invalidate(self, propogate=True):
+
         self.next_children: List[MobjectIdentity] = []
         self.current_dynamic_mobject.execute_compose()
 
-        if self.parent is not None and self.parent is terminate_propogation_mobject:
-            # terminate propogation
-            pass
-        else:
-            if not isolate:
-                self.invalidate_parent()
+        """
+        dynmaic_mobject.execute_compose() runs compose() which adds children to next_children
+        dynamic_mobject.execute_compose() then runs complete_child_registration() prior to returning
+        this process enables for downscaling ManimMatrix in e^ManimMatrix, 
+        since ManimMatrix, upon accepting new submobjects, will have the information that,
+        ManimMatrix.parent = Term and Term.superscript = ManimMatrix
+        """
 
+        if propogate:
+            self.invalidate_parent()
+        
     def invalidate_parent(self):
         if self.parent is not None:
             self.parent.invalidate()
         else:
             pass
+
+    def pre_conditional_clone(self, mobject: DynamicMobject) -> DynamicMobject:
+        
+        # this swaps out curr with next, 
+        # if next is reserved, the next is replaced with next.clone() until auto-disconnect-queue
+
+        if mobject is self._replace_mobject:
+            replacement = self._replace_mobject_replacement
+            self._replace_mobject = None
+            self._replace_mobject_replacement = None
+            return replacement
+        
+        return mobject
+
+
     
     def conditional_clone(self, mobject: DynamicMobject) -> DynamicMobject:
 
         if mobject.identity in self.next_children:
             return mobject.clone()
         
+        
+        #if mobject.identity.parent is not None and mobject.identity.parent is self:
+        #    raise Exception("CAN THIS HAPPEN?")
+        # yes, because while every mobject a graph, not every mobject has a parent. 
+        
         # mobject has another parent
         if mobject.identity.parent is not None and mobject.identity.parent is not self:
+
             clone = mobject.clone()
-            self.graph.invalidation_manager.auto_disconnect_replacements.append((mobject.identity.parent, mobject.identity, self, clone.identity))
+
+            self.graph.edit_manager.queue_auto_disconnect(
+                AutoDisconnectPacket(current_parent=mobject.identity.parent, next_parent=self, child=mobject.identity, child_clone=clone.identity)
+            )
             return clone
         
         if mobject.identity is self.change_parent_mobject:
-            replacement = self.change_parent_mobject_replacement
+            replacement = self.change_parent_mobject_replacement.current_dynamic_mobject
             self.change_parent_mobject = None
             self.change_parent_mobject_replacement = None
             return replacement
+
         
         return mobject
 
     def register_child(self, mobject: Mobject):
 
         if isinstance(mobject, DynamicMobject):
+            mobject = self.pre_conditional_clone(mobject)
             mobject = self.conditional_clone(mobject)
             self.next_children.append(mobject.identity)
             mobject = mobject.identity.current_dynamic_mobject
@@ -541,37 +701,6 @@ class MobjectIdentity(VMobject):
             
     @staticmethod
     def add_parent_connection(parent: MobjectIdentity, child: MobjectIdentity):
-        
-        if child.parent is not None:
-
-            raise Exception()
-            parent.graph.prevent_match_style_update = True
-            parent.match_style_invalidate_flag = True
-
-            child.graph.begin_invalidation()
-            child.parent.change_parent_mobject = child
-            child.parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone()
-
-            
-            if child.parent.parent is not None:
-                child.parent.terminate_propogation_mobject = child.parent.parent
-
-            #child.parent.terminate_propogation_mobject = parent
-            child.parent.graph.begin_state_invalidation()
-
-            graph1 = child.parent.graph
-
-            child_parent = child.parent
-            child.parent.invalidate()
-            child_parent.terminate_propogation_mobject = None
-
-            graph2 = child.graph
-
-            if graph1 is graph2:
-                raise Exception()
-
-            child.invalidate()
-        
         parent.graph.connect_parent_child(parent, child)
     
     @staticmethod
@@ -606,7 +735,7 @@ class DynamicMobjectSubgraph(VMobject):
         self.mobjects: List[MobjectIdentity] = [ mobject.identity for mobject in dynamic_mobjects ]
         self.graph = graph
         super().__init__()
-        self.submobjects = [ mobject.direct_submobject_tree() for mobject in self.dynamic_mobjects ]
+        self.submobjects = [ mobject.direct_submobjects() for mobject in self.dynamic_mobjects ]
 
     def contains(self, id: UUID):
         for mobject in self.mobjects:
@@ -676,10 +805,13 @@ class DynamicMobject(VMobject):
         self.super_init = False
 
         self.mobject_identity: MobjectIdentity | None = None
-        MobjectIdentity(self)
+        self.mobject_identity = MobjectIdentity(self)
 
         if id is not None:
             self.identity.id = id
+
+        self.begin_edit()
+        self.end_edit()
     
     def execute_compose(self):
         
@@ -725,13 +857,38 @@ class DynamicMobject(VMobject):
                 f"Cannot modify former handle for mobject-${self.identity.id}"
                 f"which has currently represented by {self.identity.current_dynamic_mobject}"
             )
+        
+    def begin_edit(self):
+
+        if self.super_init:
+            return
+
+        if self.graph.edit_manager.in_invalidation:
+            raise Exception()
+        
+        self.is_current_dynamic_mobject_guard()
+        self.identity.graph.edit_manager.begin_edit(self.identity)
+
+    def end_edit(self): 
+
+        if self.super_init:
+            return
+        
+        #but can't invalidate trigger compose
+        if self.graph.edit_manager.in_invalidation:
+            raise Exception()
+
+
+        #self.identity.set_dynamic_mobject(self)
+        self.identity.graph.edit_manager.end_edit(self.identity)
+
 
     def invalidate(self) -> Self:
         
         if self.super_init: # During DynamicMobject().VMobject().__init__, the MobjectIdentity is not yet initialized
             return
         
-        if self.graph.invalidation_manager.in_invalidation:
+        if self.graph.edit_manager.in_invalidation:
             print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
             return 
 
@@ -745,6 +902,12 @@ class DynamicMobject(VMobject):
     def accept_submobjects(self, *mobject: Mobject):
         self.submobjects = [ *mobject ]
 
+    @reactive
+    def replace(self, current: DynamicMobject, next: DynamicMobject):
+        self.identity._replace_mobject = current
+        self.identity._replace_mobject_replacement = next
+
+    
     def pop(self):
         self.parent.remove(self)
         return self
@@ -762,7 +925,7 @@ class DynamicMobject(VMobject):
     def subgraph(self) -> DynamicMobjectSubgraph:
         return DynamicMobjectSubgraph.from_dynamic_mobject(self)
 
-    def direct_submobject_tree(self) -> Mobject:
+    def direct_submobjects(self) -> Mobject:
         
         def recursive_extract(mobject: Mobject, group: Mobject):
 
@@ -803,7 +966,7 @@ class DynamicMobject(VMobject):
 
         def recursive_extract(mobject: DynamicMobject) -> DynamicMobject:
 
-            direct = convert_to_point_mobject(mobject.direct_submobject_tree())
+            direct = convert_to_point_mobject(mobject.direct_submobjects())
 
             mobject = mobject.become(
                 DGroup(direct, *mobject.children)
@@ -1049,14 +1212,14 @@ class DynamicMobject(VMobject):
     def graph(self) -> DynamicMobjectGraph:
         return self.identity.graph
     
+    @reactive
     def arrange(self, direction = RIGHT, buff = DEFAULT_MOBJECT_TO_MOBJECT_BUFFER, center = True, **kwargs) -> Self:
         self.arrange_function = lambda mobject: mobject.arrange(direction, buff, center, **kwargs)
-        self.invalidate()
         return self
 
+    @reactive
     def clear_arrange_function(self):
         self.arrange_function = None
-        self.invalidate()
 
 
     
@@ -1065,21 +1228,21 @@ class DynamicMobject(VMobject):
         if self.super_init:
             return
         
-        if self.graph.invalidation_manager.in_invalidation:
+        if self.graph.edit_manager.in_invalidation:
             print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
             return 
         
         self.identity.composite_edit()
 
+    @reactive
     def set_color(
         self, color: ParsableManimColor = YELLOW_C, family: bool = True
     ) -> Self:
 
-        self.composite_edit()
         super().set_color(color=color, family=family)
-        self.invalidate()
         return self
     
+    @reactive 
     def set_fill(
         self,
         color: ParsableManimColor | None = None,
@@ -1087,11 +1250,10 @@ class DynamicMobject(VMobject):
         family: bool = True,
     ) -> Self:
         
-        self.composite_edit()
         super().set_fill(color=color, opacity=opacity, family=family)
-        self.invalidate()
         return self
 
+    @reactive
     def set_stroke(
         self,
         color: ParsableManimColor = None,
@@ -1101,9 +1263,7 @@ class DynamicMobject(VMobject):
         family: bool = True,
     ) -> Self:
         
-        self.composite_edit()
         super().set_stroke(color=color, width=width, opacity=opacity, background=background, family=family)
-        self.invalidate()
         return self
         
 def extract_direct_dynamic_mobjects(mobject: Mobject):
@@ -1150,6 +1310,7 @@ class DGroup(DynamicMobject):
         self._mobjects = group.submobjects
         self.submobjects = group.submobjects
     
+    @reactive
     def add(self, *mobjects: VMobject) -> Self:
 
         for m in mobjects:
@@ -1166,16 +1327,15 @@ class DGroup(DynamicMobject):
             )
 
         self._mobjects = list_update(self._mobjects, unique_mobjects)
-        self.invalidate()
         return self
 
+    @reactive
     def remove(self, *mobjects: Mobject) -> Self:
         
         for mobject in mobjects:
             if mobject in self._mobjects:
                 self._mobjects.remove(mobject)
         
-        self.invalidate()
         return self
     
     @property
@@ -1183,6 +1343,6 @@ class DGroup(DynamicMobject):
         return self._mobjects
 
     @mobjects.setter
+    @reactive
     def mobjects(self, mobjects: List[Mobject]):
         self._mobjects = mobjects
-        self.invalidate()

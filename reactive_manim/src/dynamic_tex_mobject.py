@@ -6,8 +6,10 @@ import math
 
 import manim
 from manim import *
-from .dynamic_mobject import DynamicMobject
+from .dynamic_mobject import DynamicMobject, reactive
 from .numpy_mobject_array import NumpyMobjectArray, map_2d
+
+
 
 def pairwise(iterable):
     
@@ -222,21 +224,25 @@ class MathTex(MathComponent):
         return self._terms
 
     @terms.setter
+    @reactive
     def terms(self, terms: List[Any]):
         self._terms = self.adapt_terms(terms)
-        self.invalidate()
+        
 
+    @reactive
     def insert(self, index: int, term):
         self._terms.insert(index, self.adapt_input(term))
-        self.invalidate()
+    
 
+    @reactive
     def append(self, term):
         self._terms.append(self.adapt_input(term))
-        self.invalidate()
+        
 
+    @reactive
     def remove(self, term):
         self._terms.remove(term)
-        self.invalidate()
+        
 
     def __len__(self) -> int:
         return len(self._terms)
@@ -244,9 +250,10 @@ class MathTex(MathComponent):
     def __getitem__(self, index: int):
         return self._terms[index]
 
+    @reactive
     def __setitem__(self, index: int, term):
         self._terms[index] = self.adapt_input(term)
-        self.invalidate()
+        
 
     def __iter__(self):
         return iter(self._terms)
@@ -267,10 +274,11 @@ class MathString(MathEncodable):
 
     def compose_tex_string(self) -> str:
         return self.tex_string
-
+    
+    @reactive
     def set_tex_string(self, tex_string: str) -> Self:
         self.tex_string = tex_string
-        self.invalidate()
+        
         return self
 
     def accept_mobject_from_rendered_tex_string(self, mobject: VMobject) -> int:
@@ -394,10 +402,11 @@ class MathSequence(MathComponent):
         return self.sequence_terms
 
     @terms.setter
+    @reactive
     def terms(self, terms: List[Any]):
         self.sequence_terms = self.adapt_terms(terms)
-        self.invalidate()
 
+    @reactive
     def remove(self, term):
 
         for index, _term in enumerate(self.sequence_terms):
@@ -410,9 +419,8 @@ class MathSequence(MathComponent):
             if index == len(self.commas):
                 index -= 1
             self.commas.pop(index)
-
-        self.invalidate()
-
+        
+    @reactive
     def insert(self, index, term):
         term = self.adapt_input(term)
 
@@ -420,7 +428,6 @@ class MathSequence(MathComponent):
             self.commas.insert(index, MathString(","))
 
         self.sequence_terms.insert(index, term)
-        self.invalidate()
 
     def append(self, term):
         self.insert(len(self), term)
@@ -431,9 +438,9 @@ class MathSequence(MathComponent):
     def __getitem__(self, index: int):
         return self.sequence_terms[index]
 
+    @reactive
     def __setitem__(self, index: int, term):
         self.sequence_terms[index] = self.adapt_input(term)
-        self.invalidate()
 
     def __iter__(self):
         return iter(self.sequence_terms)
@@ -572,28 +579,32 @@ class Term(MathComponent):
         return self.base
     
     @term.setter
+    @reactive
     def term(self, term: Any):
         self.base = self.adapt_input(term)
-        self.invalidate()
+        
     
     @property
     def subscript(self):
         return self._subscript
     
     @subscript.setter
+    @reactive
     def subscript(self, subscript: Any):
         self._subscript = self.adapt_input(subscript)
-        self.invalidate()
+        
     
     @property
     def superscript(self):
         return self._superscript
     
     @superscript.setter
+    @reactive
     def superscript(self, superscript: Any):
         self._superscript = self.adapt_input(superscript)
-        self.invalidate()
+        
 
+    @reactive
     def remove(self, mobject):
 
         if mobject is self.term:
@@ -605,7 +616,7 @@ class Term(MathComponent):
         if mobject is self._subscript:
             self._subscript = None
         
-        self.invalidate()
+        
 
 
 class Parentheses(MathComponent):
@@ -639,9 +650,10 @@ class Parentheses(MathComponent):
         return self._inner
     
     @inner.setter
+    @reactive
     def inner(self, inner: Any):
         self._inner = self.adapt_input(inner)
-        self.invalidate()
+        
 
 
     def __len__(self) -> int:
@@ -650,9 +662,10 @@ class Parentheses(MathComponent):
     def __getitem__(self, index: int):
         return self._inner[index]
 
+    @reactive
     def __setitem__(self, index: int, term):
         self._inner[index] = self.adapt_input(term)
-        self.invalidate()
+        
         
 
 class Function(MathComponent):
@@ -686,18 +699,20 @@ class Function(MathComponent):
         return self._input
     
     @input.setter
+    @reactive
     def input(self, input: Any):
         self._input = self.adapt_input(input)
-        self.invalidate()
+        
 
     @property
     def function_name(self):
         return self._name
 
     @function_name.setter
+    @reactive
     def function_name(self, name):
         self._name = self.adapt_input(name)
-        self.invalidate()
+        
 
 
 class Fraction(MathComponent):
@@ -725,9 +740,10 @@ class Fraction(MathComponent):
         return self._numerator
 
     @numerator.setter
+    @reactive
     def numerator(self, numerator):
         self._numerator = self.adapt_input(numerator)
-        self.invalidate()
+        
     
     @property
     def vinculum(self):
@@ -738,9 +754,10 @@ class Fraction(MathComponent):
         return self._denominator
 
     @denominator.setter
+    @reactive
     def denominator(self, denominator):
         self._denominator = self.adapt_input(denominator)
-        self.invalidate()
+        
 
 
 class BracketMathStringFragment(MathStringFragment):
@@ -878,21 +895,25 @@ class MathCases(MathComponent):
         return self._lines
     
     @lines.setter
+    @reactive
     def lines(self, lines: List[Any]):
         self._lines = self.adapt_lines(lines)
-        self.invalidate()
+        
 
+    @reactive
     def insert(self, index: int, line):
         self._lines.insert(index, self.adapt_input(line))
-        self.invalidate()
+        
 
+    @reactive
     def append(self, line):
         self._lines.append(self.adapt_input(line))
-        self.invalidate()
+        
 
+    @reactive
     def remove(self, line):
         self._lines.remove(line)
-        self.invalidate()
+        
     
     def __len__(self) -> int:
         return len(self._lines)
@@ -900,9 +921,10 @@ class MathCases(MathComponent):
     def __getitem__(self, index: int):
         return self._lines[index]
 
+    @reactive
     def __setitem__(self, index: int, line):
         self._lines[index] = self.adapt_input(line)
-        self.invalidate()
+        
 
     def __iter__(self):
         return iter(self._lines)
@@ -930,18 +952,20 @@ class CaseLine(MathComponent):
         return self._output
 
     @output.setter
+    @reactive
     def output(self, output):
         self._output = self.adapt_input(output)
-        self.invalidate()
+        
 
     @property
     def condition(self):
         return self._condition
 
     @condition.setter
+    @reactive
     def condition(self, condition):
         self._condition = self.adapt_input(condition)
-        self.invalidate()
+        
     
 
 class MathMatrix(MathComponent):
@@ -1005,7 +1029,7 @@ class MathMatrix(MathComponent):
         self._matrix = NumpyMobjectArray.from_mobjects(
             map_2d(matrix, lambda elem: self.adapt_input(elem))
         )
-        self.invalidate()
+        
 
     def __len__(self) -> int:
         return len(self._matrix.tolist())
@@ -1024,9 +1048,9 @@ class Root(MathComponent):
         radicand,
         index = None
     ):
-        self._radicand = radicand
+        self._radicand = self.adapt_input(radicand)
         self._radical_symbol = MathStringFragment("", submobject_count=2)
-        self._index = index
+        self._index = self.adapt_input(index)
         super().__init__(permit_none_children=True)
 
     def compose_tex_string(self):
@@ -1035,31 +1059,33 @@ class Root(MathComponent):
         self._radical_symbol = self.register_child(self._radical_symbol)
         self._index = self.register_child(self._index)
         
-        if self.index is None:
+        if self.index is not None:
             self.child_components = [ self._index, self._radical_symbol, self._radicand ]
             return f"\\sqrt[{self._index.get_tex_string()}]{{{self._radicand.get_tex_string()}}}"
         else:
             self.child_components = [ self._radical_symbol, self._radicand ]
-            return f"\\sqrt[{self._index.get_tex_string()}]{{{self._radicand.get_tex_string()}}}"
+            return f"\\sqrt{{{self._radicand.get_tex_string()}}}"
     
-    @property
+    @property 
     def radicand(self):
         return self._radicand
 
     @radicand.setter
+    @reactive
     def radicand(self, radicand):
         self._radicand = self.adapt_input(radicand)
-        self.invalidate()
+        
 
     @property
     def index(self):
         return self._index
-
+    
     @index.setter
+    @reactive
     def index(self, index):
         self._index = self.adapt_input(index)
-        self.invalidate()
-
+        
+    
     @property
     def radical_symbol(self):
         return self._radical_symbol

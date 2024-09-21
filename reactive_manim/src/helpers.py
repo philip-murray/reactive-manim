@@ -1,4 +1,4 @@
-from typing import Iterable, TypeVar, Optional
+from typing import Iterable, TypeVar, Optional, Callable
 T = TypeVar("T")
 
 def extract_unique(iterable: Iterable[T]) -> T:
@@ -15,6 +15,12 @@ def extract_unique_or_none(iterable: Iterable[T]) -> Optional[T]:
     else:
         raise Exception()
     
+def generate(t: Optional[T], generator: Callable[[], T]) -> T:
+    if t is None:
+        return generator()
+    else:
+        return t
+
 import uuid
 
 # Initialize a counter
