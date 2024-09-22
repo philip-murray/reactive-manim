@@ -23,11 +23,13 @@ def generate(t: Optional[T], generator: Callable[[], T]) -> T:
 
 import uuid
 
+
+v4 = uuid.uuid4
 # Initialize a counter
 counter = -1
 
 # Define the custom function that replaces uuid.uuid4()
-def custom_uuid4():
+def custom_uuid4x():
     global counter
     counter += 1
 
@@ -36,5 +38,8 @@ def custom_uuid4():
     
     return counter
 
+def custom_uuid4():
+    return v4()
+
 # Overwrite uuid.uuid4() with your custom function
-uuid.uuid4 = custom_uuid4
+uuid.uuid4 = custom_uuid4x

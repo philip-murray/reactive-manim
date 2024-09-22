@@ -6,7 +6,7 @@ scene_init = manim.Scene.__init__
 
 def intercept_scene_init(self, *args, **kwargs):
     scene_init(self, *args, **kwargs)
-    print("INTERCEPTOR SCENE INIT")
+    #print("INTERCEPTOR SCENE INIT")
     attach_progress_interceptors(self)
 
 manim.Scene.__init__ = intercept_scene_init

@@ -100,6 +100,21 @@ class AbstractDynamicTransformManager():
         self.transform_descriptor = GraphTransformDescriptor(self.source_graph.copy(), self.target_graph.copy())
         self.transform_containers = { id: TransformContainer(id) for id in self.transform_descriptor.ids() }
 
+        """
+        for mobject in self.source_graph.mobjects:
+            if mobject.id == 38:
+                raise Exception("found-38-src")
+            
+        for mobject in self.target_graph.mobjects:
+            if mobject.id == 38:
+                raise Exception("found-38-trg")
+
+        for id in self.transform_descriptor.ids():
+            if id == 38:
+                raise Exception("38 found")
+        """
+        
+
         self.save_recover_point()
 
 
@@ -221,7 +236,12 @@ class AbstractDynamicTransformManager():
 
         self.graph.unsubscribe(self.subscription_id)
         self.scene_manager.delete_transform_manager(self.graph)
-        self.scene_manager.create_progress_manager(self.graph).create_progress_point(on_finish_transforms=True)
+
+        # Restricted on_finish_transforms to progress-finish only, so in from_copy(tex1, tex2); from_copy(tex2, tex3)
+        # from_copy(tex1, tex2) does not clear the id-linking required for from_copy(tex2, tex3)
+        on_finish_transforms = isinstance(self, ProgressTransformManager)
+        #print("OFT ", on_finish_transforms)
+        self.scene_manager.create_progress_manager(self.graph).create_progress_point(on_finish_transforms=on_finish_transforms)
 
     def recover_mobject(self, mobject):
         self.mobject_recovery.recover_mobject(mobject)
@@ -879,7 +899,7 @@ class AbstractDynamicTransform(Animation):
     def interpolate(self, alpha: float) -> None:
         self.animation.interpolate(alpha)
 
-    
+from .dynamic_tex_mobject import MathString, MathStringFragment
 class GraphTransformDescriptor():
 
     def __init__(
@@ -922,23 +942,54 @@ class GraphTransformDescriptor():
     def ids(self):
         return { mobject.id for mobject in self.source_graph.mobjects }.union({ mobject.id for mobject in self.target_graph.mobjects })
 
-    def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
+    def find_source_dynamic_mobject(self, id):
+        m = self.find_source_dynamic_mobject_(id)
+
+        if self.source_graph.contains(id):
+            mobject = self.source_graph.get_dynamic_mobject(id)
+        else:
+            mobject = self.target_graph.get_dynamic_mobject(id)
+
+        
+        if not isinstance(mobject, MathString) and not isinstance(mobject, MathStringFragment):
+            if isinstance(m, MathString) or isinstance(m, MathStringFragment):
+
+                print("FOUND EXCEPTION")
+                print("THIS COMPOSITE ", mobject, mobject.id, " WANTS ", m, m.id)
+                raise Exception()
+
+        return m
+
+    def find_source_dynamic_mobject_(self, id: UUID) -> DynamicMobject | None:
 
         if self.source_graph.contains(id):
             return self.source_graph.find_dynamic_mobject(id)
         else:
+            # if not direct match, check if source_id set
             source_id = self.target_graph.get_dynamic_mobject(id).source_id
             if source_id is not None and self.source_graph.contains(source_id):
                 return self.source_graph.find_dynamic_mobject(source_id)
             else:
+                # auto-disconnect policy
                 for mobject in self.source_graph.dynamic_mobjects:
                     if mobject.source_id == id:
                         return mobject
                 
+                # auto-disconnect with multiple targets
                 if self.target_graph.contains(source_id):
                     for mobject in self.source_graph.dynamic_mobjects:
-                        if mobject.source_id == source_id:
+                        if mobject.source_id == source_id and source_id is not None:
                             return mobject
+                    
+
+                # auto-disconnect using tex1 -> tex2 -> tex3, where tex3 removes previous auto-disconnect information
+                # I think the only difference is that now, we are no longer checking for self.target_graph.contains(source_id)
+                # becuase tex3 can remove that 
+                for mobject in self.source_graph.dynamic_mobjects:
+                    if mobject.source_id == source_id and source_id is not None:
+                        return mobject
+                    
+  
                 
                 return None
     
@@ -953,7 +1004,7 @@ class GraphTransformDescriptor():
             else:
                 source_id = self.source_graph.find_dynamic_mobject(id).source_id
                 for mobject in self.target_graph.dynamic_mobjects:
-                    if mobject.id == source_id:
+                    if mobject.id == source_id and source_id is not None:
                         return mobject
 
                 return None
@@ -1471,5 +1522,5 @@ class TransformInStages(AbstractDynamicTransform):
         if not self.introducer_track.has_mobject_with_points():
             self.introducer_track.set_parent(None)
         
-        print("SETTIGN LAG RATIO ", self._lag_ratio)
+        #print("SETTIGN LAG RATIO ", self._lag_ratio)
         self.default_track.set_lag_ratio(self._lag_ratio)

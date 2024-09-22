@@ -229,11 +229,11 @@ class AutoDisconnectPacket():
 
     def verify(self, mobject):
 
-        print(self.current_parent.id, self.next_parent.id, self.child.id, self.child_clone.id)
-        print(self.child.parent.id)
+        #print(self.current_parent.id, self.next_parent.id, self.child.id, self.child_clone.id)
+        #print(self.child.parent.id)
 
-        print(self.child.parent)
-        print(self.current_parent)
+        #print(self.child.parent)
+        #print(self.current_parent)
 
         if self.child.parent is not self.current_parent:
             raise Exception()
@@ -358,8 +358,8 @@ class GraphEditManager():
                     # Attempt to un-restructure terms in tex2, prior to handoff to tex3.
                     #old_parent.graph.begin_invalidation()
                     #old_parent.graph.begin_state_invalidation()
-                    print(old_parent, child, new_parent, child_clone)
-                    print(old_parent, old_parent.graph, old_parent.graph.edit_manager.in_invalidation)
+                    #print(old_parent, child, new_parent, child_clone)
+                    #print(old_parent, old_parent.graph, old_parent.graph.edit_manager.in_invalidation)
                     old_parent.begin_entrance_invalidation()
 
                 if child.graph is old_parent.graph or child.graph is new_parent.graph:
@@ -412,7 +412,7 @@ class GraphEditManager():
             
 
             if current_parent.graph is self.graph:
-                print("A")
+                #print("A")
                 # with .replace(), this is only used for same-graph handling
                 current_parent.change_parent_mobject = child
                 current_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone().identity
@@ -420,15 +420,15 @@ class GraphEditManager():
                 same_graph_parent_queue.append(current_parent)
             else:
                 # INVALIDATE OLD PARENT BEGIN ENTRANCE IVNAL
-                print("B")
+                #print("B")
                 current_parent.current_dynamic_mobject.replace(child.current_dynamic_mobject, child.current_dynamic_mobject.clone())
                 
 
             # the child belongs to neither curr nor next
             if child.graph is current_parent.graph or child.graph is next_parent.graph:
-                print(child.graph)
-                print(current_parent.graph)
-                print(next_parent.graph)
+                #print(child.graph)
+                #print(current_parent.graph)
+                #print(next_parent.graph)
                 raise Exception()
 
             next_parent.change_parent_mobject = child_clone
@@ -450,9 +450,9 @@ class GraphEditManager():
             raise Exception()
 
         if len(self.composite_stack) == 0 or self.composite_stack[-1] is not mobject:
-                print(len(self.composite_stack) == 0)
-                print(self.composite_stack[-1] is not mobject)
-                print(self.composite_stack[-1], mobject)
+                #print(len(self.composite_stack) == 0)
+                #print(self.composite_stack[-1] is not mobject)
+                #print(self.composite_stack[-1], mobject)
                 raise Exception()
 
         self.composite_stack.pop()
@@ -889,7 +889,7 @@ class DynamicMobject(VMobject):
             return
         
         if self.graph.edit_manager.in_invalidation:
-            print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
+            #print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
             return 
 
         self.is_current_dynamic_mobject_guard()  
@@ -1229,7 +1229,7 @@ class DynamicMobject(VMobject):
             return
         
         if self.graph.edit_manager.in_invalidation:
-            print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
+            #print("WE ARE ATTEMPTIGN TO INVALIDATE DURIGN COMPOSE!")
             return 
         
         self.identity.composite_edit()
