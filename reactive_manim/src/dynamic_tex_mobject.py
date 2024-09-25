@@ -292,7 +292,7 @@ class MathString(MathEncodable):
         #if self.id == "Y":
         #    AR.append(VGroup(*submobjects).copy())
 
-        if self.graph.prevent_match_style_update:
+        if False:
             # don't match style
             pass
         else:
@@ -306,7 +306,7 @@ class MathString(MathEncodable):
         return submobject_count
 
     def __repr__(self):
-        return f"MathString({self.id, self.tex_string, self.store_sm_count})"
+        return f"MathString({self.id, self.tex_string})"
 
 class MathStringFragment(MathEncodable):
 
@@ -507,6 +507,8 @@ class Term(MathComponent):
         ):
         
         self.base = self.adapt_input(term)
+        #print("BASE ISx ", self.base, type(self.base))
+
         self._subscript = self.adapt_input(subscript)
         self._superscript = self.adapt_input(superscript)
 
@@ -520,7 +522,7 @@ class Term(MathComponent):
         super().__init__(permit_none_children=True)
 
     def compose_tex_string(self):
-
+        
         self.base = self.register_child(self.base)
         self._subscript = self.register_child(self._subscript)
         self._superscript = self.register_child(self._superscript)

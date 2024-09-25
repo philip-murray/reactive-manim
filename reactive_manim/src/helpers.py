@@ -43,3 +43,10 @@ def custom_uuid4():
 
 # Overwrite uuid.uuid4() with your custom function
 uuid.uuid4 = custom_uuid4x
+
+
+def none(object: Optional[T]):
+    return True if object is None else False
+
+def empty(iterable: Iterable[T]):
+    return len(iterable) == 0
