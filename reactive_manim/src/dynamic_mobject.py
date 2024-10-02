@@ -9,9 +9,6 @@ from manim import *
 import functools
 
 
-
-""" MOVING CLASSES FROM ANIMATION.PY INTO DYNAMIC_MOBJECT.PY """
-
 scene_init = Scene.__init__
 
 def intercept_scene_init(self, *args, **kwargs):
@@ -19,6 +16,28 @@ def intercept_scene_init(self, *args, **kwargs):
     attach_progress_interceptors(self)
 
 Scene.__init__ = intercept_scene_init
+
+
+animation_init = Animation.__init__
+
+def intercept_animation_init(self, *args, **kwargs):
+    animation_init(self, *args, **kwargs)
+
+    if self.remover:
+
+        dynamic_mobjects = extract_direct_dynamic_mobjects(self.mobject)
+
+        for mobject in dynamic_mobjects:
+            SceneManager.construct_remover_animation(mobject)
+
+    if self.introducer:
+
+        dynamic_mobjects = extract_direct_dynamic_mobjects(self.mobject)
+        for mobject in dynamic_mobjects:
+            SceneManager.construct_introducer_animation(mobject)
+
+Animation.__init__ = intercept_animation_init
+
 
 
 def attach_progress_interceptors(scene: Scene) -> SceneManager:
@@ -60,8 +79,27 @@ def attach_progress_interceptors_function(scene: Scene) -> SceneManager:
             scene_manager.scene_wait()
             scene_wait(*args, **kwargs)
 
+        def _remove(*mobjects):
+
+            for mobject in mobjects:
+                
+                for m in mobject.get_family():
+                    if isinstance(m, MobjectIdentity): 
+                        raise Exception()
+
+                for m in extract_direct_dynamic_mobjects(mobject):
+                    if isinstance(m, DynamicMobject):
+                        scene_manager.scene_remove(m)
+
+            for mobject in mobjects:
+                scene_add(mobject)
+                scene_remove(mobject)
+
+            return scene
+
         scene.add = _add
         scene.wait = _wait
+        scene.remove = _remove
 
         scene.scene_add = scene_add
         scene.scene_wait = scene_wait
@@ -89,7 +127,22 @@ class SceneManager():
 
     _scene_manager: SceneManager | None = None
     _scene: Scene | None = None
+
+    _client_context: bool = True
     
+
+    @staticmethod
+    def disable_client_context():
+        SceneManager._client_context = False
+
+    @staticmethod
+    def enable_client_context():
+        SceneManager._client_context = True
+
+    @staticmethod
+    def client_context() -> bool:
+        return SceneManager._client_context
+
     @staticmethod
     def scene_manager():
 
@@ -115,53 +168,6 @@ class SceneManager():
             
         raise Exception()
 
-    """
-    def has_transform_manager(self, graph: DynamicMobjectGraph):
-        #return graph in self.transform_managers
-        return self.graph_managers
-    
-    def get_transform_manager(self, graph: DynamicMobjectGraph):
-
-        if graph in self.transform_managers:
-            return self.transform_managers[graph]
-        
-        raise Exception()
-    
-    def add_transform_manager(self, graph, transform_manager):
-        
-        if graph not in self.transform_managers:
-            self.transform_managers[graph] = transform_manager
-
-        self.transform_managers[graph].matches_construction_guard(transform_manager)
-
-        if self.transform_managers[graph] is transform_manager:
-            transform_manager.begin_transforms()
-
-        return self.transform_managers[graph]
-    
-    def delete_transform_manager(self, graph):
-        del self.transform_managers[graph]
-        
-
-    def has_progress_manager(self, graph: DynamicMobjectGraph):
-        return graph in self.progress_managers
-
-    def get_progress_manager(self, graph: DynamicMobjectGraph):
-
-        if graph in self.progress_managers:
-            return self.progress_managers[graph]
-        
-        raise Exception("No progress point for DynamicMobjectGraph exists")
-    
-    def create_progress_manager(self, graph: DynamicMobjectGraph):
-
-        if graph not in self.progress_managers:
-            self.progress_managers[graph] = GraphProgressManager(graph, self.scene)
-        
-        return self.progress_managers[graph]
-    """
-    
-
     def graph_manager(self, graph: DynamicMobjectGraph):
         return self.graph_managers[graph]
 
@@ -175,6 +181,10 @@ class SceneManager():
     def scene_remove(self, mobject: DynamicMobjectGraph):
         for manager in list(self.graph_managers.values()).copy():
             manager.scene_remove()
+
+    def construct_introducer_animation(self, mobject: DynamicMobject):
+        pass
+        #self.graph_managers[mobject.graph]
 
     
 class GraphProgressManager():
@@ -195,7 +205,7 @@ class GraphProgressManager():
         self.source_mobjects: Dict[UUID, MobjectIdentity] = {}
         self.target_mobjects: Dict[UUID, MobjectIdentity] = {}
     
-    def save_source_graph(self, on_finish_transforms=False):
+    def save_source_graph(self, clear_source_target_flags=False):
 
         """
         ID-POLICY, CLEAR ID FLAGS SET BY PREVIOUS TRANSFORMATION
@@ -204,7 +214,7 @@ class GraphProgressManager():
         # what about auto disconncet removers
         """
         
-        if on_finish_transforms:
+        if clear_source_target_flags:
             for mobject in self.graph.dynamic_mobjects:
                 mobject.source_id = None
                 mobject.target_id = None
@@ -216,6 +226,12 @@ class GraphProgressManager():
         self.target_mobjects = None
 
     def save_target_graph(self):
+
+
+        for mobject in self.source_graph.dynamic_mobjects:
+            mobject.source_id = None # this is applied to GOC -> source_graph
+            mobject.target_id = None # this isn't applied to GOC -> target_graph
+
         self.target_graph = self.graph.copy()
         self.target_mobjects = { mobject.id: mobject for mobject in self.graph.mobjects }
 
@@ -308,68 +324,41 @@ class AbstractDynamicTransformManager():
         
         """
         INVALIDATION POLICY
-        In the following example:
-        
-        from_copy(tex1, tex2)
-        from_copy(tex2, tex3)
+        In from_copy(tex1, tex2); from_copy(tex2, tex3)
 
-        tex2 still be in a restructured state, so  self.source_graph.begin_invalidation() is called to unrestructure tex2
+        tex2 is still in a restructured state when from_copy(tex2, tex3) is called, 
+        so self.source_graph_manager.require_default() is called to unrestructure tex2
         so that the GraphTransformDescriptor(tex2, tex3) is not corrupted
 
-        Maybe SceneManager should save a unrestructured copy of every graph?
+        Need to change this so that .copy() returns an uncorrupted copy provided by the state-manager
         """
-
-
-        
-        
-
-        #self.source_graph.begin_invalidation()
-        #self.source_graph.begin_state_invalidation()
-
-        # if source-graph is in default-mode this does nothing
-        # if source-graph is in transform-mode, this takes ends transforms and takes it back to default-mode 
         self.source_graph_manager.require_default()
         
-
         # begin_transforms() runs on the first partial-transform call, i.e. scene.play(TransformInStages.some_constructor(tex)) in a series of some_constructor-partial-transforms
         # Subsequent partial-transforms will skip to animating the existing transform_containers, that have not yet been animated by previous partial-transforms
-
-        #self.subscription_id = uuid.uuid4()
-        #self.graph.subscribe(lambda graph: self.end_transforms(), self.subscription_id)
+        # self.graph.subscribe(lambda graph: self.end_transforms(), self.subscription_id)
         
         self.transform_descriptor = GraphTransformDescriptor(self.source_graph.copy(), self.target_graph.copy())
         self.transform_containers = { id: TransformContainer(id) for id in self.transform_descriptor.ids() }
-
-
         self.save_recover_point()
 
 
-        # ADD TRANSFORM-CONTAINERS TO SCENE
-
-        for container in self.transform_containers.values():
-            self.scene.scene_add(container)
         
+        for container in self.transform_containers.values(): # ADD TRANSFORM-CONTAINERS TO SCENE
+            self.scene.scene_add(container)
 
-        # REMOVE OBSERVERS FROM SCENE
-
-        for mobject in self.observers():
+        for mobject in self.observers(): # REMOVE OBSERVERS FROM SCENE
             mobject.submobjects = []
             
-        for mobject in self.observers():
+        for mobject in self.observers():  # due to auto-disconnect, this could corrupt progress(src) after doing from_copy(src, trg) ?
             self.scene.scene_add(mobject).scene_remove(mobject)
-            # due to auto-disconnect, this could corrupt progress(src) after doing from_copy(src, trg) ?
 
-
-        # SET TIME=0 MOBJECT FOR EACH TRANSFORM-CONTAINER
-
-        for id, container in self.transform_containers.items():
+        for id, container in self.transform_containers.items(): # SET TIME=0 MOBJECT FOR EACH TRANSFORM-CONTAINER
             self.create_source_mobject_for_container(container, id)
 
-        # perhaps we might want to move this to RF area. 
-        for id, container in self.transform_containers.items():
+        for id, container in self.transform_containers.items(): # perhaps we might want to move this to RF area. 
             if id in self.transform_descriptor.prevent_ids():
                 container.set_opacity(0)
-
 
         # RESTRUCTURE OBSERVERS TO POINT INTO TRANSFORM-CONTAINERS
         self.restructure_participant_observers(participant_observers=self.transform_containers.keys())
@@ -405,11 +394,7 @@ class AbstractDynamicTransformManager():
 
     @abstractmethod
     def observers(self) -> List[DynamicMobject]:
-        
-        """
-        transform-observers are the mobjects the user declares in the scene.construct method, it is best understood by replacement_transform
-        """
-
+        """ transform-observers are the mobjects the user declares in the scene.construct method, it is best understood by replacement_transform """
         pass
         # these are the user's mobjects declared on the stack, that are used to connect the scene to the transform_containers
         # Scene -> root_mobject -> transform_container[root]
@@ -418,7 +403,6 @@ class AbstractDynamicTransformManager():
 
     @abstractmethod
     def create_source_mobject_for_container(self, container, id):
-
         """
         This sets the initial visual state of each containers[id] to time=0, 
         it is required because the first transform might not animate every container[id] at once,
@@ -464,12 +448,11 @@ class AbstractDynamicTransformManager():
         #self.scene_manager.delete_transform_manager(self.graph)
         """ delete_transform_manager now occurs by set_state(DefaultState()) by either require_default() or begin_edit() """
 
-        # Restricted on_finish_transforms to progress-finish only, so in from_copy(tex1, tex2); from_copy(tex2, tex3)
+        # Restricted clear_source_target_flags to progress-finish only, so in from_copy(tex1, tex2); from_copy(tex2, tex3)
         # from_copy(tex1, tex2) does not clear the id-linking required for from_copy(tex2, tex3)
-        on_finish_transforms = hasattr(self, "progress_manager") #isinstance(self, ProgressTransformManager)
 
-        #self.scene_manager.create_progress_manager(self.graph).create_progress_point(on_finish_transforms=on_finish_transforms)
-        return on_finish_transforms
+        #self.scene_manager.create_progress_manager(self.graph).create_progress_point(clear_source_target_flags=clear_source_target_flags)
+        self.graph.manager().save_source_graph(clear_source_target_flags=True)#hasattr(self, "progress_manager"))
 
 
     def recover_mobject(self, mobject):
@@ -530,24 +513,46 @@ class GraphTransformDescriptor():
         self.source_graph = source_graph
         self.target_graph = target_graph
 
-    def prevent_ids(self):
+        self.source_memo = {}
+        self.target_memo = {}
 
+    def prevent_ids(self):
+        
         ids = self.ids()
         prevent_ids = set()
-        for id in ids:
 
+        # finding (idS, idT) such that 
+        # find_target_dynamic_mobject(idS) -> target_graph[idT]
+        # find_source_dynamic_mobject(idT) -> source_graph[idS]
+        # this is essentially an id changing its name, but two containers are animated which has a double-overlay
+        # we remove the idS by putting it in prevent_ids() for the TransformItinerary to set_opacity(0)
+
+        
+        for id in ids:
+            if self.is_scene_remover(id) and self.has_target(id):
+                target = self.find_target_dynamic_mobject(id)
+                if self.is_scene_introducer(target.id) and self.has_source(target.id):
+                    source = self.find_source_dynamic_mobject(target.id)
+                    if source.id == id:
+                        prevent_ids.add(id)
+
+        return prevent_ids
+
+        
+
+        
+        for id in ids:
             # given x' -> x, is_remover(x') is false. This is_scene_remover might cause problems later
             if self.is_scene_remover(id):
-                
                 auto_disconnect_source_id = self.source_graph.find_dynamic_mobject(id).source_id
 
                 for mobject in self.target_graph.dynamic_mobjects:
 
-                    
                     if mobject.source_id is not None and mobject.source_id == id:
                         if id not in ids:
                             raise Exception()
                         if id in ids:
+                            print("prevent A ", id, )
                             prevent_ids.add(id) # fix y in xyxyxy example
 
                     
@@ -555,6 +560,8 @@ class GraphTransformDescriptor():
                         if id not in ids: 
                             raise Exception()
                         if id in ids: # uh what is with the id in ids?
+                            if id == 64:
+                                print("ID PREVENT B")
                             prevent_ids.add(id) # fix x in xyxyxy example
 
         return prevent_ids
@@ -562,25 +569,141 @@ class GraphTransformDescriptor():
     def ids(self):
         return { mobject.id for mobject in self.source_graph.mobjects }.union({ mobject.id for mobject in self.target_graph.mobjects })
 
-    def find_source_dynamic_mobject(self, id):
-        m = self.find_source_dynamic_mobject_(id)
-
-        if self.source_graph.contains(id):
-            mobject = self.source_graph.get_dynamic_mobject(id)
-        else:
-            mobject = self.target_graph.get_dynamic_mobject(id)
-
-        
-        #if not isinstance(mobject, MathString) and not isinstance(mobject, MathStringFragment):
-        #    if isinstance(m, MathString) or isinstance(m, MathStringFragment):
-        #
-        #        print("FOUND EXCEPTION")
-        #        print("THIS COMPOSITE ", mobject, mobject.id, " WANTS ", m, m.id)
-        #        raise Exception()
-
-        return m
-
     def find_source_dynamic_mobject_(self, id: UUID) -> DynamicMobject | None:
+        if id is None:
+            raise Exception()
+        
+        # DIRECT MATCH
+        if self.source_graph.contains(id):
+            return self.source_graph.get_dynamic_mobject(id)
+        else:
+            # DIRECT FLAG
+            source_id = self.target_graph.get_dynamic_mobject(id).source_id
+
+            if not none(source_id) and self.source_graph.contains(source_id):
+                return self.source_graph.get_dynamic_mobject(source_id)
+
+            # SOURCE-FINDER-1
+            # It's unlikely that m1.target_id = m2 would be set on an m2-introducer. 
+
+            # SOURCE-FINDER 2
+            for mobject in self.target_graph.dynamic_mobjects:
+                if mobject.id == source_id:
+                    if self.find_source_dynamic_mobject_(mobject.id) is not None:
+                        return self.find_source_dynamic_mobject_(mobject.id)
+                    
+            return None
+
+    def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
+        if id in self.source_memo:
+            return self.source_memo[id]
+        else:
+            source = self.find_source_dynamic_mobject_(id)
+            self.source_memo[id] = source
+            return source
+        
+
+    def find_target_dynamic_mobject_(self, id: UUID, checked: List[DynamicMobject]) -> DynamicMobject | None:
+        #print("FTDM")
+        if id is None:
+            raise Exception()
+        
+        checked.add(id)
+        #print("A")
+
+        # DIRECT MATCH
+        if self.target_graph.contains(id):
+            return self.target_graph.get_dynamic_mobject(id)
+        else:
+            # DIRECT FLAG
+            target_id = self.source_graph.get_dynamic_mobject(id).target_id
+
+            if not none(target_id) and self.target_graph.contains(target_id):
+                return self.target_graph.get_dynamic_mobject(target_id)
+            #print("B")
+            # TARGET-FINDER-1, given a <-sid- a.clone(), then target(a) = a.clone(), if there only exists one a.clone()
+            for mobject in self.target_graph.dynamic_mobjects:
+                if mobject.source_id == id:
+                    return mobject
+                
+                    # a = MathString("a")
+                    # tex1 = MathTex(a)
+                    # tex2 = MathTex(a)  REQUIRED-PREVENT-ID since tex1[a].id and tex2[a].id have the same itinerary
+            #print("C") 
+
+
+            """
+            MathMatrix printout:
+            FTDM
+            A
+            B
+            C
+            id=18 18->* source --- (sid,tid)=(-, N) cross-id=N
+            FTDM
+            A
+            B
+            id=84 84->167 source --- (sid,tid)=(-, N) cross-id=18
+            FTDM
+            A
+            id=167 84->167 ______ --- (sid,tid)=(84, -) cross-id=-
+
+            We see that  [*] <- [*]
+                                 ^
+                                 |
+                                [*]
+
+            This happens in non-trival horizontal contructions, liken to Tex(a, a, a) but more complex like constructions like Tex(Tex(a), Tex(a))
+            We are not looking for mobjects whose id is the current cross_id, but mobjects who the their cross_id is the current_id                
+            
+            
+            """
+
+
+            # TARGET-FINDER-2, if source_graph DM is an a.clone() to another source_graph[a], check if source_graph[a] has a corresponding target_mobject
+            #cross_id = self.source_graph.get_dynamic_mobject(id).source_id
+            for mobject in self.source_graph.dynamic_mobjects:
+                if mobject.source_id == id:
+                    if mobject.id not in checked:
+                        if self.find_target_dynamic_mobject_(mobject.id, checked) is not None:
+                            return self.find_target_dynamic_mobject_(mobject.id, checked)
+                    
+                        # a = MathString("a")
+                        # tex1 = MathTex(a, a)
+                        # tex2 = MathTex(a)      # this policy enables both tex1[0] and tex1[1] to merge onto tex2[0]
+
+            """
+            We see that  [*] <- [*]
+                          ^
+                          |
+                         [*]
+
+            this happens because of Tex(a, a, a) causing a1 and a2 to be clones of a0, we could change register_child implemenation perhaps?
+            Not just the claim: `We are not looking for mobjects whose id is the current cross_id, but mobjects who the their cross_id is the current_id`    
+
+            """
+
+            cross_id = self.source_graph.get_dynamic_mobject(id).source_id
+            for mobject in self.source_graph.dynamic_mobjects:
+                if mobject.id == cross_id:
+                    if mobject.id not in checked:
+                        if self.find_target_dynamic_mobject_(mobject.id, checked) is not None:
+                            return self.find_target_dynamic_mobject_(mobject.id, checked)
+                    
+            return None
+            
+    def find_target_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
+
+        if id in self.target_memo:
+            return self.target_memo[id]
+        else:
+            checked = set()
+            target = self.find_target_dynamic_mobject_(id, checked=checked)
+            self.target_memo[id] = target
+            return target
+
+
+    """
+    def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
 
         if self.source_graph.contains(id):
             return self.source_graph.find_dynamic_mobject(id)
@@ -601,7 +724,6 @@ class GraphTransformDescriptor():
                         if mobject.source_id == source_id and source_id is not None:
                             return mobject
                     
-
                 # auto-disconnect using tex1 -> tex2 -> tex3, where tex3 removes previous auto-disconnect information
                 # I think the only difference is that now, we are no longer checking for self.target_graph.contains(source_id)
                 # becuase tex3 can remove that 
@@ -628,7 +750,46 @@ class GraphTransformDescriptor():
                         return mobject
 
                 return None
+ 
+    """
     
+    """
+    def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
+
+        if self.source_graph.contains(id):
+            return self.source_graph.find_dynamic_mobject(id)
+        else:
+            source_id = self.target_graph.get_dynamic_mobject(id).source_id
+            if source_id is not None and self.source_graph.contains(source_id):
+                return self.source_graph.find_dynamic_mobject(source_id)
+            else:
+                for mobject in self.source_graph.dynamic_mobjects:
+                    if mobject.source_id == id:
+                        return mobject
+                
+                if self.target_graph.contains(source_id):
+                    for mobject in self.source_graph.dynamic_mobjects:
+                        if mobject.source_id == source_id:
+                            return mobject
+                
+                return None
+    
+    def find_target_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
+        if self.target_graph.contains(id):
+            return self.target_graph.find_dynamic_mobject(id)
+        else:
+            target_id = self.source_graph.get_dynamic_mobject(id).target_id
+            if target_id is not None and self.target_graph.contains(target_id):
+                return self.target_graph.find_dynamic_mobject(target_id)
+            else:
+                source_id = self.source_graph.find_dynamic_mobject(id).source_id
+                for mobject in self.target_graph.dynamic_mobjects:
+                    if mobject.id == source_id:
+                        return mobject
+
+                return None
+    """
+
     def has_source(self, id: UUID):
         return True if self.find_source_dynamic_mobject(id) is not None else False
     
@@ -651,7 +812,6 @@ class GraphTransformDescriptor():
         return self.target_graph.contains(id) and not self.source_graph.contains(id)
     
     def is_source_parent(self, parent_id, child_id):
-
         # maybe find child, check child.parent which may be None
 
         child = self.find_source_dynamic_mobject(child_id)
@@ -664,7 +824,6 @@ class GraphTransformDescriptor():
         return False
 
     def is_target_parent(self, parent_id, child_id):
-
         # maybe find child, check child.parent which may be None
 
         child = self.find_target_dynamic_mobject(child_id)
@@ -742,10 +901,6 @@ class GraphTransformDescriptor():
             return recursive_has_ancestor_with_id(target_child)
         
 
-""" FINISHED MOVING CLASSES FROM ANIMATION.py INTO DYNAMIC_MOBJECT.PY """
-
-
-
 def reactive(dynamic_mobject_method):
 
     @functools.wraps(dynamic_mobject_method)
@@ -782,6 +937,7 @@ class GraphStateInterface():
     def end(self):
         raise NotImplementedError()
 
+
     @abstractmethod
     def begin_edit(self, mobject: MobjectIdentity):
         raise NotImplementedError()
@@ -790,6 +946,7 @@ class GraphStateInterface():
     def end_edit(self, mobject: MobjectIdentity):
         raise NotImplementedError()
 
+
     @abstractmethod
     def accept_transform_manager(
         self, 
@@ -797,6 +954,7 @@ class GraphStateInterface():
     ):
         raise NotImplementedError()
     
+
     @abstractmethod
     def scene_add(self):
         raise NotImplementedError()
@@ -808,6 +966,19 @@ class GraphStateInterface():
     @abstractmethod
     def scene_remove(self):
         raise NotImplementedError()
+    
+
+    @abstractmethod
+    def construct_introducer_animation(self, mobject: DynamicMobject):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def construct_remover_animation(self, mobject: DynamicMobject):
+        raise NotImplementedError()
+    
+    
+    
+
 
 
 class TransformState(GraphStateInterface):
@@ -821,15 +992,13 @@ class TransformState(GraphStateInterface):
         self.transform_manager = transform_manager
 
     def begin(self):
-        #print("BEGIN")
-        #print("BEGIN")
-        #print("BEGIN")
         self.transform_manager.begin_transforms()
     
     def end(self):
-        detach_supplemental_ids = self.transform_manager.end_transforms()
-        self.manager.create_progress_manager2()
-        self.manager.progress_manager.save_source_graph(on_finish_transforms=detach_supplemental_ids)
+        self.transform_manager.end_transforms()
+        #detach_supplemental_ids = self.transform_manager.end_transforms()
+        #self.manager.create_progress_manager2()
+        #self.manager.progress_manager.save_source_graph(clear_source_target_flags=detach_supplemental_ids)
 
 
     def begin_edit(self, mobject: MobjectIdentity):
@@ -878,7 +1047,6 @@ class DefaultState(GraphStateInterface):
         self, 
         transform_manager: AbstractDynamicTransformManager
     ):
-        #print("DEFAULT STATE ATM ")
         self.manager.set_state(TransformState(self.manager, transform_manager))
         return transform_manager
     
@@ -886,11 +1054,14 @@ class DefaultState(GraphStateInterface):
         return
 
     def scene_add(self):
-        self.manager.create_progress_point()
+        self.manager.save_source_graph()
 
     def scene_wait(self):
-        if self.manager.has_progress_manager():
-            self.manager.update_progress_point()
+        # a graph that is not added to the scene will not have a progress manager, it is assumed to still be in construction
+        # on scene.add() it gets its first progress point, and wait() refresh it, unless in transform mode which assumes wait() is apart of transformation
+
+        if self.manager.has_progress_manager(): # in TransformState, exists progress_manager, but we don't update on wait(), 
+            self.manager.save_source_graph()
 
     def scene_remove(self):
         return
@@ -938,16 +1109,25 @@ class GraphStateManager():
         self.progress_manager: Optional[GraphProgressManager] = None
         self.scene_manager = SceneManager.scene_manager()
 
+    def save_source_graph(self, clear_source_target_flags: bool = False):
+
+        if self.progress_manager is None:
+            scene_manager = SceneManager.scene_manager()
+            self.progress_manager = GraphProgressManager(self.graph, scene_manager.scene)
+
+        self.progress_manager.save_source_graph(clear_source_target_flags=clear_source_target_flags)
+    
+    def save_target_graph(self):
+        self.progress_manager.save_target_graph()
+
     def has_progress_manager(self):
         return self.progress_manager is not None
-
+    
+    
     def __deepcopy__(self, memo):
         raise Exception()
     
     def set_state(self, state: GraphStateInterface):
-        #print("SET STATE")
-        #print("SET STATE")
-        #print("SET STATE", type(state))
         self.state.end()
         self.state = state
         self.state.begin()
@@ -962,7 +1142,6 @@ class GraphStateManager():
         self,
         transform_manager: AbstractDynamicTransformManager
     ):
-        #print("GSM ATM")
         return self.state.accept_transform_manager(transform_manager)
             
     def require_default(self):
@@ -976,24 +1155,7 @@ class GraphStateManager():
     
     def scene_remove(self):
         self.state.scene_remove()
-
-    def create_progress_point(self):
-
-        scene_manager = SceneManager.scene_manager()
-
-        if none(self.progress_manager):
-            self.progress_manager = GraphProgressManager(self.graph, scene_manager.scene)
-
-        self.progress_manager.save_source_graph()
-
-    def update_progress_point(self):
-        self.progress_manager.save_source_graph()
-
-    def create_progress_manager2(self):
-
-        if none(self.progress_manager):
-            self.progress_manager = GraphProgressManager(self.graph, SceneManager.scene_manager().scene)
-
+    
 class DynamicMobjectGraph(Mobject):
 
     def manager(self) -> GraphStateManager:
@@ -1006,7 +1168,6 @@ class DynamicMobjectGraph(Mobject):
 
     def __init__(self):
         super().__init__()
-        #print("GRAPH CONSTRUCTOR")
         self.root_mobjects: Set[MobjectIdentity] = []
         self.create_manager()
 
@@ -1229,9 +1390,9 @@ class GraphEditManager():
         self.composite_queue.append(mobject)
         self.composite_depth[mobject] = len(self.composite_stack)
 
-    def execute_invalidation(self, mobject: MobjectIdentity, propagate: bool):
+    def execute_invalidation(self, mobject: MobjectIdentity, propagate: bool, permit_auto_disconnects: bool):
         self.invalidation_lock = True
-        mobject.invalidate(propagate=propagate)
+        mobject.invalidate(propagate=propagate, permit_auto_disconnects=permit_auto_disconnects)
         self.invalidation_lock = False
 
     def sort_composite_queue(self):
@@ -1242,13 +1403,13 @@ class GraphEditManager():
         for mobject in self.sort_composite_queue():
             if mobject is not self.primary_mobject:
 
-                self.execute_invalidation(mobject, propagate=False)
+                self.execute_invalidation(mobject, propagate=False, permit_auto_disconnects=False)
 
                 if len(self.auto_disconnect_queue) > 0:
                     raise Exception("Auto-disconnect is not supported inside nested-level composite-edits")
         
     def process_primary_mobject(self):
-        self.execute_invalidation(self.primary_mobject, propagate=True) # first invalidation-pass yields auto-disconnects
+        self.execute_invalidation(self.primary_mobject, propagate=True, permit_auto_disconnects=True) # first invalidation-pass yields auto-disconnects
         self.process_auto_disconnects()
 
     def queue_auto_disconnect(self, packet: AutoDisconnectPacket):
@@ -1260,91 +1421,15 @@ class GraphEditManager():
             self.process_auto_disconnect(packet) # may yiled same-graph-parent for invalidation 
         
         for mobject in self.auto_disconnect_same_graph_parents:
-            self.execute_invalidation(mobject, propagate=True)
+            self.execute_invalidation(mobject, propagate=True, permit_auto_disconnects=False)
 
-        self.execute_invalidation(self.primary_mobject, propagate=True)
-
-        """
-        invalidation_queue = []
-
-        for (placeholder, child, next_parent) in self.auto_disconnect_queue:
-
-            # next_parent.graph is GIM.graph
-            # child.graph and current_parent.graph is/is-not GIM.graph
-
-            current_parent = child.parent
-            current_parent.prepare_auto_disconnect(child)
-
-            if current_parent.graph is next_parent.graph:
-                current_parent.invalidate(propagate=False)
-                invalidation_queue.append(current_parent)
-            else:
-                current_parent.begin_entrance_invalidation()
-
-            next_parent.prepare_auto_disconnect()
-                
-
-        #this all relies in the assumption that only on begin_entrance_invalidation, is auto-disconnect potentially required
-            inv_q = []
-
-            for (old_parent, child, new_parent, child_clone) in self.auto_disconnect_replacements:
-                
-                temp = child_clone
-                temp_dm = child_clone.current_dynamic_mobject
-                
-                if old_parent.graph is not self.graph:
-                #   old_parent.graph.begin_invalidation()
-                    #old_parent.graph.begin_state_invalidation() # this will save_centers()
-                    old_parent.begin_entrance_invalidation() # this will call old_parent.graph.notify_subscribers()
-                    
-                    
-                    begin_state_invalidation is SAVE_CENTERS
-                    begin_entrance_invalidation will call old_parent.graph.NOTIFY_SUBSCRIBERS
-
-                    SAVE_CENTERS is called by set_dynamic_mobject() prior to begin_entrance_invalidation() handoff, 
-                    because set_dynamic_mobject is checking for (MobjectIdentity.current == None) condition on first construction
-                    therefore, we need to change DynamicMobject -> MobjectIdentity -> Graph construction to just create an initial empty state
-                    and then DynamicMobject will call begin_entrance_invalidation() to render
-
-                    
-                    # will not call save_centers() 
-                
-                old_parent.change_parent_mobject = child #MI
-                old_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone() #DM
-
-                if old_parent.graph is self.graph:
-                    old_parent.invalidate(propagate=False) # alrady in entrance_invalidation
-                    inv_q.append(old_parent)
-                else:
-                    # Attempt to un-restructure terms in tex2, prior to handoff to tex3.
-                    #old_parent.graph.begin_invalidation()
-                    #old_parent.graph.begin_state_invalidation()
-                    #print(old_parent, child, new_parent, child_clone)
-                    #print(old_parent, old_parent.graph, old_parent.graph.edit_manager.in_invalidation)
-                    old_parent.begin_entrance_invalidation()
-
-                if child.graph is old_parent.graph or child.graph is new_parent.graph:
-                    raise Exception()
-                
-                new_parent.change_parent_mobject = child_clone
-                new_parent.change_parent_mobject_replacement = child.current_dynamic_mobject
-
-                next_parent.change_parent_mobject = temp
-                
-                new_parent.invalidate(propagate=False)
-
-            
-
-            mobject.invalidate()
-            for m in inv_q:
-                m.invalidate() 
-
-            self.auto_disconnect_replacements = [] 
-        """
+        self.execute_invalidation(self.primary_mobject, propagate=True, permit_auto_disconnects=False)
 
     def process_auto_disconnect(self, packet: AutoDisconnectPacket):
         
         (current_parent, next_parent, child, child_clone) = packet.extract()
+
+        #print((child.parent is not current_parent) , child_clone.parent is not next_parent, next_parent is not self.primary_mobject)
 
         if (child.parent is not current_parent) or (child_clone.parent is not next_parent) or (next_parent is not self.primary_mobject):
             raise Exception()
@@ -1353,52 +1438,20 @@ class GraphEditManager():
             raise Exception()
         
         if current_parent.graph is self.graph:
-            #print("A")
-            current_parent.change_parent_mobject = child
-            current_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone().identity
+            clone_dynamic_mobject = child.current_dynamic_mobject.clone()
 
-            self.execute_invalidation(current_parent, propagate=False)
+            current_parent.change_parent_mobject = child
+            current_parent.change_parent_mobject_replacement = clone_dynamic_mobject.identity
+
+            self.execute_invalidation(current_parent, propagate=False, permit_auto_disconnects=False)
             self.auto_disconnect_same_graph_parents.append(current_parent)
         else:
-            #print("B")
-            cc = child.current_dynamic_mobject.clone()
+            child_replacement = child.current_dynamic_mobject.clone()
+            clone_dynamic_mobject = child_replacement
 
-            #print("TEST 1 ", child in current_parent.children, cc in current_parent.children, id(child.graph), id(cc.graph))
+          
+            current_parent.current_dynamic_mobject.replace(child.current_dynamic_mobject, child_replacement)
 
-            def somehow_connected(mob, graph):
-                for mobject in graph.root_mobjects:
-                    if graph.connected_from_root(mobject):
-                        return True
-                    
-                return False
-
-            #print(f"request disconnect parent={current_parent.id}-child-{child.id}, connect-{cc.id}")
-            #print("T ", child in current_parent.graph.connected_from_root(current_parent), child is current_parent, child.graph is current_parent.graph, current_parent.graph.contains(child.id))
-            #print("F ", cc in current_parent.graph.connected_from_root(current_parent), cc.parent is current_parent, cc.graph is current_parent.graph, current_parent.graph.contains(cc.id))
-
-            current_parent.current_dynamic_mobject.replace(child.current_dynamic_mobject, cc)
-
-            #print("F ", child in current_parent.graph.connected_from_root(current_parent), child is current_parent, child.graph is current_parent.graph, current_parent.graph.contains(child.id))
-            #print("T ", cc in current_parent.graph.connected_from_root(current_parent), cc.parent is current_parent, cc.graph is current_parent.graph, current_parent.graph.contains(cc.id))
-
-            
-            #print("TEST 2 ", child in current_parent.children, cc in current_parent.children, id(child.graph), id(cc.graph))
-
-            #print(current_parent.current_dynamic_mobject)
-            #print(current_parent.current_dynamic_mobject.children)
-
-
-
-            #print(id(child.graph), id(current_parent.graph), id(cc.graph))
-            #print(child in current_parent.children)
-            #print(cc in current_parent.children)
-
-            #print("child info id=", child.id,       " parent-id=", child.parent.id)
-            #print("chiCl info id=", child_clone.id, " parent-id=", child_clone.parent.id)
-            #print("cupar info id=", current_parent.id)
-            #print("current parent children ", current_parent.children, current_parent.current_dynamic_mobject.children)
-
-            #print(type(current_parent.graph.root_mobjects))
             if child.graph is current_parent.graph:
                 raise Exception()
 
@@ -1412,89 +1465,36 @@ class GraphEditManager():
         if child.graph is current_parent.graph or child.graph is self.primary_mobject.graph:
             raise Exception()
         
+
         self.primary_mobject.change_parent_mobject = child_clone
         self.primary_mobject.change_parent_mobject_replacement = child.current_dynamic_mobject.identity
-        self.execute_invalidation(self.primary_mobject, propagate=False)
+        self.execute_invalidation(self.primary_mobject, propagate=False, permit_auto_disconnects=False)
 
+
+        dynamic_mobject = child.current_dynamic_mobject
+
+        #clone_dynamic_mobject.id, dynamic_mobject.id = dynamic_mobject.id, clone_dynamic_mobject.id
+        #clone_dynamic_mobject.source_id, dynamic_mobject.source_id = dynamic_mobject.source_id, clone_dynamic_mobject.source_id
+        #clone_dynamic_mobject.target_id, dynamic_mobject.target_id = dynamic_mobject.target_id, clone_dynamic_mobject.target_id
+
+
+        # want to make it so dynamic_mobject (or child) looks like the clone
+        # 
         
-    
-    """
-    def process_mobject(self, mobject: MobjectIdentity):
+        mobject1 = clone_dynamic_mobject
+        mobject2 = dynamic_mobject
 
-        self.in_invalidation = True
-        mobject.invalidate()
-        self.in_invalidation = False
-
-        same_graph_parent_queue: Set[MobjectIdentity] = set()
-
-        for packet in self.auto_disconnect_queue:
-            packet.verify(mobject)
-            current_parent, next_parent, child, child_clone = packet.extract()
-
-            # NEED OLD PARENT NOTIFY/SAVE_CENTERS
-
-            
-
-            if current_parent.graph is self.graph:
-                #print("A")
-                # with .replace(), this is only used for same-graph handling
-                current_parent.change_parent_mobject = child
-                current_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.clone().identity
-                current_parent.invalidate(propagate=False)
-                same_graph_parent_queue.append(current_parent)
-            else:
-                # INVALIDATE OLD PARENT BEGIN ENTRANCE IVNAL
-                #print("B")
-                current_parent.current_dynamic_mobject.replace(child.current_dynamic_mobject, child.current_dynamic_mobject.clone())
-                
-
-            # the child belongs to neither curr nor next
-            if child.graph is current_parent.graph or child.graph is next_parent.graph:
-                #print(child.graph)
-                #print(current_parent.graph)
-                #print(next_parent.graph)
-                raise Exception()
-
-            next_parent.change_parent_mobject = child_clone
-            next_parent.change_parent_mobject_replacement = child.current_dynamic_mobject.identity
-            next_parent.invalidate(propagate=False)
+        pairs = []
         
-        for mobject in same_graph_parent_queue:
-            mobject.invalidate()
+        for m1 in mobject1.get_dynamic_family():
+            for m2 in mobject2.get_dynamic_family():
+                if m1.source_id == m2.id:
+                    pairs.append((m1, m2))
 
-        mobject.invalidate()
-        self.auto_disconnect_queue = []
-
-
-
-
-    def end_edit(self, mobject: MobjectIdentity):
-
-        if self.in_invalidation:
-            raise Exception()
-
-        if len(self.composite_stack) == 0 or self.composite_stack[-1] is not mobject:
-                #print(len(self.composite_stack) == 0)
-                #print(self.composite_stack[-1] is not mobject)
-                #print(self.composite_stack[-1], mobject)
-                raise Exception()
-
-        self.composite_stack.pop()
-
-        if len(self.composite_stack) > 0:
-            return
-        
-        if mobject is not self.primary_mobject:
-            raise Exception()
-        
-        self.process_composite_queue()
-        self.process_mobject(mobject)
-
-        self.mode = "default"
-    """
-
-            
-
+        for (m1, m2) in pairs:
+            m1.id, m2.id = m2.id, m1.id
+            m1.source_id, m2.source_id = m2.source_id, m1.source_id
+            m1.target_id, m2.target_id = m2.target_id, m1.target_id
         
 
 
@@ -1503,7 +1503,8 @@ class MobjectIdentity():
 
     def __init__(
         self, 
-        mobject: DynamicMobject
+        mobject: DynamicMobject,
+        construct_graph: bool
     ):
         super().__init__()
         self.id = uuid.uuid4()
@@ -1512,11 +1513,12 @@ class MobjectIdentity():
         self.parent: MobjectIdentity | None = None
         self.children: Set[MobjectIdentity] = set()
         
-        #self.mobject_graph: DynamicMobjectGraph | None = None
-        #self.mobject_graph = DynamicMobjectGraph()
-        mobject_graph = DynamicMobjectGraph()
-        mobject_graph.root_mobjects = { self }
-        #self.mobject_graph.root_mobjects = { self }
+        if construct_graph:
+            #self.mobject_graph: DynamicMobjectGraph | None = None
+            #self.mobject_graph = DynamicMobjectGraph()
+            mobject_graph = DynamicMobjectGraph()
+            mobject_graph.root_mobjects = { self }
+            #self.mobject_graph.root_mobjects = { self }
 
         self.current: DynamicMobject | None = mobject
         self.mobject_center = VMobject().get_center()
@@ -1525,7 +1527,7 @@ class MobjectIdentity():
         self._change_parent_mobject_replacement: MobjectIdentity | None = None
         self._replace_mobject: DynamicMobject | None = None
         self._replace_mobject_replacement: DynamicMobject | None = None 
-        
+        self.override_permit_auto_disconnects = False
 
     @property
     def change_parent_mobject(self):
@@ -1610,8 +1612,14 @@ class MobjectIdentity():
     def complete_child_registration(self):
         self.set_children(self.next_children)
 
-    def invalidate(self, propagate=True):
+    def invalidate(self, propagate=True, permit_auto_disconnects=True):
+        
+        # this is to handle tex1 = Tex(a); tex2 = Tex(a, a, a), where the 2nd and 3rd `a` need to return a clone without queing an auto-disconnect
+        # in this new 0.0.2 invalidation system, the 1st `a` return a.clone() while queueing an auto-disconnect, so `a` is not yet in next_children
+        # so we need the next_from_auto_disconnect to know that we need to return clones for the 2nd and 3rd `a`.
+        self.next_from_auto_disconnect = set()
 
+        self.permit_auto_disconnects = permit_auto_disconnects
         self.next_children: List[MobjectIdentity] = []
         self.current_dynamic_mobject.execute_compose()
 
@@ -1628,7 +1636,7 @@ class MobjectIdentity():
         
     def invalidate_parent(self):
         if self.parent is not None:
-            self.parent.invalidate()
+            self.parent.invalidate(propagate=True, permit_auto_disconnects=False)
         else:
             pass
 
@@ -1649,7 +1657,7 @@ class MobjectIdentity():
     
     def conditional_clone(self, mobject: DynamicMobject) -> DynamicMobject:
 
-        if mobject.identity in self.next_children:
+        if mobject.identity in self.next_children or mobject.identity in self.next_from_auto_disconnect:
             return mobject.clone()
         
         
@@ -1659,9 +1667,14 @@ class MobjectIdentity():
         
         # mobject has another parent
         if mobject.identity.parent is not None and mobject.identity.parent is not self:
+            
+            self.next_from_auto_disconnect.add(mobject.identity)
+
+            if not self.permit_auto_disconnects or self.override_permit_auto_disconnects:
+                raise Exception(f"Inval {self.current_dynamic_mobject}-{self.id},  {mobject}-{mobject.id} has parent {mobject.parent}-{mobject.parent.id}")
 
             clone = mobject.clone()
-
+            
             self.graph.manager().state.edit_manager.queue_auto_disconnect(
                 AutoDisconnectPacket(current_parent=mobject.identity.parent, next_parent=self, child=mobject.identity, child_clone=clone.identity)
             )
@@ -1702,7 +1715,6 @@ class MobjectIdentity():
     
     @staticmethod
     def remove_parent_connection(parent: MobjectIdentity, child: MobjectIdentity):
-        #print("DISCONNECT parent=", parent.id, " child=", child.id)
         parent.graph.disconnect_parent_child(parent, child)
 
     def __str__(self) -> str:
@@ -1786,6 +1798,7 @@ class DynamicMobject(VMobject):
     def __init__(
         self,
         id: UUID | None = None, 
+        construct_graph: bool = True,
         **kwargs
     ):
         self.shift_flag = False
@@ -1803,13 +1816,34 @@ class DynamicMobject(VMobject):
         self.super_init = False
 
         self.mobject_identity: MobjectIdentity | None = None
-        self.mobject_identity = MobjectIdentity(self)
+        self.mobject_identity = MobjectIdentity(self, construct_graph=construct_graph)
 
         if id is not None:
             self.identity.id = id
 
-        self.begin_edit()
-        self.end_edit()
+        if construct_graph:
+            self.begin_edit()
+            self.end_edit()
+
+    def has_graph(self):
+        try:
+            self.graph
+            return True
+        except:
+            return False
+
+    def invalidation_lock(self):
+        
+        try:
+            state = self.graph.manager().state
+            if isinstance(state, EditState):
+                edit_manager = state.edit_manager
+                return edit_manager.invalidation_lock
+        except:
+            # in partial construction for .become() a DM/Mi setup may not have a graph
+            return False
+        
+        return False
     
     def execute_compose(self):
         
@@ -1863,6 +1897,13 @@ class DynamicMobject(VMobject):
 
         if self.super_init:
             return
+        
+        if self.invalidation_lock():
+            print("SAFE RETURN")
+            return
+        
+        if not self.has_graph():
+            return
 
         #if self.graph.manager.in_invalidation:
         #    raise Exception()
@@ -1875,6 +1916,13 @@ class DynamicMobject(VMobject):
         if self.super_init:
             return
         
+        if self.invalidation_lock():
+            print("SAFE RETURN")
+            return
+        
+        if not self.has_graph():
+            return
+
         #but can't invalidate trigger compose
         #if self.graph.edit_manager.in_invalidation:
         #    raise Exception()
@@ -1908,7 +1956,6 @@ class DynamicMobject(VMobject):
         self.identity._replace_mobject = current
         self.identity._replace_mobject_replacement = next
 
-    
     def pop(self):
         self.parent.remove(self)
         return self
@@ -1992,6 +2039,8 @@ class DynamicMobject(VMobject):
 
         return mobject_copy
 
+
+    """
     def __disconnect_graph_objects(self):
 
         mobject_graph = self.mobject_identity.mobject_graph
@@ -2005,7 +2054,7 @@ class DynamicMobject(VMobject):
 
     def __restore_graph_objects(self):
         self.restore_graph_objects_function()
-
+    """
 
     def __deepcopy__(self, memo):
 
@@ -2083,11 +2132,74 @@ class DynamicMobject(VMobject):
                 f"{type(self).__name__}.become() recieved a standard mobject."
                 f"To use a standard mobject, for example, a Square(), try using `${type(self).__name__}.become(Dynamic(Square()))`"
             )
+        
+        self.begin_edit()
+        self.end_edit()
 
+        become_mobject = mobject.clone()
+        #numerator = become_mobject.numerator
+        #for mob in become_mobject.get_dynamic_family():
+        #    print("BECOME MOBJECT MEMBER ", mob, mob.id, mob is numerator)
+        empty = DynamicMobject(construct_graph=False)
+
+        become_mobject.mobject_identity.current_dynamic_mobject = empty
+        empty.mobject_identity = become_mobject.mobject_identity
+        
+
+        empty.begin_edit()
+        empty.end_edit() #this will remove become_mobject.children from it's previous MI
+
+        #print("CHECK PAR ", empty.has_graph(), empty.children, numerator.parent)
+
+        self.mobject_identity.current_dynamic_mobject = become_mobject
+        become_mobject.mobject_identity = self.mobject_identity
+
+        become_mobject.begin_edit()
+        self.mobject_identity.override_permit_auto_disconnects = True
+        #print("NUMERATOR PARENT ", numerator.parent)
+        become_mobject.end_edit()
+        return become_mobject
+    
+    def become_(self, mobject: DynamicMobjectType) -> DynamicMobjectType:
+        self.is_current_dynamic_mobject_guard()
+
+        if not isinstance(mobject, DynamicMobject):
+            raise TypeError(
+                f"{type(self).__name__}.become() recieved a standard mobject."
+                f"To use a standard mobject, for example, a Square(), try using `${type(self).__name__}.become(Dynamic(Square()))`"
+            )
+        
+
+
+        GR = self.graph
+        
         mobject_centers = {}
         for vertex in mobject.get_dynamic_family():
             mobject_centers[vertex] = vertex.get_center()
 
+        become_mobject = mobject.clone()
+        print("BECOME PARENT ", become_mobject.parent)
+
+        become_mobject_m = {}
+
+        for c1 in become_mobject.children:
+            for c2 in mobject.children:
+                if c1.source_id == c2.id:
+                    print(c1.id, c1 in become_mobject.children)
+                    become_mobject_m[c2] = c1
+
+        
+        
+        mobject_children = mobject.children.copy()
+
+        for child in mobject_children:
+            mobject.replace(child, child.clone())
+
+        for child in mobject_children:
+            print(become_mobject_m[child].id, become_mobject_m[child] in become_mobject.children)
+            become_mobject.replace(become_mobject_m[child], child)
+        
+        """
         mobject1, mobject2 = mobject, mobject.clone()
 
         children1 = mobject1.children.copy()
@@ -2112,9 +2224,34 @@ class DynamicMobject(VMobject):
             mobject2.identity.change_parent_mobject = child.identity
             mobject2.identity.change_parent_mobject_replacement = m[child]
             mobject2.identity.invalidate()
-        
-        empty = DynamicMobject()
+        """
+
+        self.begin_edit()
+        self.end_edit() # send any edit notification ? 
+
+        class MyDyn(DynamicMobject):
+            pass
+
+        empty = MyDyn(construct_graph=False)
         empty.mobject_identity = None
+        become_mobject.mobject_identity.current_dynamic_mobject = empty
+
+        become_mobject.mobject_identity = self.mobject_identity
+        self.mobject_identity.current_dynamic_mobject = become_mobject
+        self.mobject_identity.override_permit_auto_disconnects = True
+
+        print("MI 1", become_mobject.mobject_identity)
+
+        raise Exception(GR is become_mobject.graph)
+
+        become_mobject.begin_edit()
+        print("MI 1", become_mobject.mobject_identity)
+        print("TYPE OF BECO MOBJECT ", type(become_mobject))
+        become_mobject.end_edit()
+
+        return
+        """
+        self.identity.set_dynamic_mobject(empty)
 
         mobject2.identity.set_dynamic_mobject(empty)
         mobject2.mobject_identity = None
@@ -2128,6 +2265,7 @@ class DynamicMobject(VMobject):
         for child in children1:
             child.identity.mobject_center = mobject_centers[child]
         return mobject2
+        """
 
     def get_dynamic_family(self) -> List[DynamicMobject]:
         family: Set[DynamicMobject] = set()
@@ -2203,6 +2341,11 @@ class DynamicMobject(VMobject):
     
     @property
     def children(self) -> List[DynamicMobject]:
+        if self.mobject_identity is None:
+            raise Exception("MI IS NONE")
+        
+        if not isinstance(self.mobject_identity.children, set):
+            raise Exception("NOT SET")
         return [ identity.current_dynamic_mobject for identity in self.mobject_identity.children ]
 
     @property
@@ -2214,7 +2357,10 @@ class DynamicMobject(VMobject):
 
     @property
     def id(self) -> UUID:
-        return self.identity.id
+        try:
+            return self.identity.id
+        except:
+            raise Exception(type(self), " has not identity")
     
     @id.setter
     def id(self, id: UUID):

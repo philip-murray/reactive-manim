@@ -20,6 +20,9 @@ def generate(t: Optional[T], generator: Callable[[], T]) -> T:
         return generator()
     else:
         return t
+    
+def set_none(function):
+    function(None)
 
 import uuid
 
@@ -27,6 +30,17 @@ import uuid
 v4 = uuid.uuid4
 # Initialize a counter
 counter = -1
+
+graph_counter = -1
+
+def create_graph_id():
+    global graph_counter
+    graph_counter += 1
+
+    #if counter == 111:
+    #    raise Exception()
+    
+    return graph_counter
 
 # Define the custom function that replaces uuid.uuid4()
 def custom_uuid4x():
@@ -50,3 +64,4 @@ def none(object: Optional[T]):
 
 def empty(iterable: Iterable[T]):
     return len(iterable) == 0
+

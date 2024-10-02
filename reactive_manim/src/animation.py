@@ -286,15 +286,29 @@ class AbstractDynamicTransform(Animation):
         required due to auto-disconnect, where instead of x -> x' we have x' -> x
         x' -> x, means that x'.source_id = x.id """
 
+        """
         extra_ids = set()
-        for mobject in source_graph.mobjects:
+        for mobject in source_graph.dynamic_mobjects:
+            #if transform_manager.transform_descriptor.find_target_dynamic_mobject(mobject.id) is not None:
+
+        
             if target_subgraph.contains(mobject.current_dynamic_mobject.target_id):
                 extra_ids.add(mobject.id)
             if target_subgraph.contains(mobject.current_dynamic_mobject.source_id):
                 extra_ids.add(mobject.id)
+        """
 
         participants = { mobject.id for mobject in target_subgraph.mobjects }
-        participants = participants.union(extra_ids)
+        participants_extra = set()
+
+        for mobject in source_graph.dynamic_mobjects:
+            if mobject.id not in participants:
+                mobject_target = transform_manager.transform_descriptor.find_target_dynamic_mobject(mobject.id)
+                print(f"MOBJECT {mobject.id} and target(id).id=", "x" if mobject_target is None else mobject_target.id)
+                if not none(mobject_target) and mobject_target.id in participants:
+                    participants_extra.add(mobject.id)
+
+        participants = participants.union(participants_extra)
 
         animation = cls(transform_manager, participants, **kwargs)
 
