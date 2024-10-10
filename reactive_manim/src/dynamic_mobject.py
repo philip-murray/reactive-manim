@@ -17,7 +17,7 @@ def intercept_scene_init(self, *args, **kwargs):
 
 Scene.__init__ = intercept_scene_init
 
-"""
+
 animation_init = Animation.__init__
 
 def intercept_animation_init(self, *args, **kwargs):
@@ -28,16 +28,19 @@ def intercept_animation_init(self, *args, **kwargs):
         dynamic_mobjects = extract_direct_dynamic_mobjects(self.mobject)
 
         for mobject in dynamic_mobjects:
-            SceneManager.construct_remover_animation(mobject)
+            for dm in mobject.get_dynamic_family():
+                SceneManager.scene_manager().construct_remover_animation(dm)
 
     if self.introducer:
 
         dynamic_mobjects = extract_direct_dynamic_mobjects(self.mobject)
-        for mobject in dynamic_mobjects:
-            SceneManager.construct_introducer_animation(mobject)
+
+        #for mobject in dynamic_mobjects:
+        #    for dm in mobject.get_dynamic_family():
+        #        SceneManager.construct_introducer_animation(dm)
 
 Animation.__init__ = intercept_animation_init
-"""
+
 
 
 def attach_progress_interceptors(scene: Scene) -> SceneManager:
@@ -71,7 +74,8 @@ def attach_progress_interceptors_function(scene: Scene) -> SceneManager:
 
                 for m in extract_direct_dynamic_mobjects(mobject):
                     if isinstance(m, DynamicMobject):
-                        scene_manager.scene_add(m)
+                        for dm in m.get_dynamic_family():
+                            scene_manager.scene_add(dm)
 
             return scene_add(*mobjects)
         
@@ -89,7 +93,8 @@ def attach_progress_interceptors_function(scene: Scene) -> SceneManager:
 
                 for m in extract_direct_dynamic_mobjects(mobject):
                     if isinstance(m, DynamicMobject):
-                        scene_manager.scene_remove(m)
+                        for dm in m.get_dynamic_family():
+                            scene_manager.scene_remove(dm)
 
             for mobject in mobjects:
                 scene_add(mobject)
@@ -122,6 +127,10 @@ def extract_direct_dynamic_mobjects(mobject: Mobject):
     else:
         recursive_extract(mobject)
         return list(dynamic_mobjects)
+    
+
+graph_references = []
+graph_references_memo = {}
 
 class SceneManager():
 
@@ -162,6 +171,21 @@ class SceneManager():
 
     def graph_of_root_mobject(self, root_mobject: MobjectIdentity):
 
+        def correct(root, graph):
+            return root in graph.root_mobjects
+
+        if root_mobject in graph_references_memo:
+            graph = graph_references_memo[root_mobject]
+            if correct(root_mobject, graph):
+                return graph
+            
+        for graph in graph_references:
+            if correct(root_mobject, graph):
+                graph_references_memo[root_mobject] = graph
+                return graph
+            
+        raise Exception()
+
         for manager in self.graph_managers.values():
             if root_mobject in manager.graph.root_mobjects:
                 return manager.graph
@@ -172,19 +196,18 @@ class SceneManager():
         return self.graph_managers[graph]
 
     def scene_add(self, mobject: DynamicMobject):
-        self.graph_managers[mobject.graph].scene_add()
+        self.graph_managers[mobject.graph].scene_add(mobject.identity)
 
     def scene_wait(self):
         for manager in list(self.graph_managers.values()).copy():
             manager.scene_wait()
 
     def scene_remove(self, mobject: DynamicMobjectGraph):
-        for manager in list(self.graph_managers.values()).copy():
-            manager.scene_remove()
+        self.graph_managers[mobject.graph].scene_remove(mobject.identity)
 
-    def construct_introducer_animation(self, mobject: DynamicMobject):
-        pass
-        #self.graph_managers[mobject.graph]
+    def construct_remover_animation(self, mobject: DynamicMobject):
+        self.graph_managers[mobject.graph].construct_remover_animation(mobject.identity)
+
 
     
 class GraphProgressManager():
@@ -279,7 +302,7 @@ class TransformContainer(VMobject):
     
 
 """
-The DynamicTransformManager (ADTM) is a class that assits with running multiple partial transforms,
+The DynamicTransformManager (ADTM) is a class that assists with running multiple partial transforms,
 
 ---
 
@@ -701,95 +724,6 @@ class GraphTransformDescriptor():
             self.target_memo[id] = target
             return target
 
-
-    """
-    def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
-
-        if self.source_graph.contains(id):
-            return self.source_graph.find_dynamic_mobject(id)
-        else:
-            # if not direct match, check if source_id set
-            source_id = self.target_graph.get_dynamic_mobject(id).source_id
-            if source_id is not None and self.source_graph.contains(source_id):
-                return self.source_graph.find_dynamic_mobject(source_id)
-            else:
-                # auto-disconnect policy
-                for mobject in self.source_graph.dynamic_mobjects:
-                    if mobject.source_id == id:
-                        return mobject
-                
-                # auto-disconnect with multiple targets
-                if self.target_graph.contains(source_id):
-                    for mobject in self.source_graph.dynamic_mobjects:
-                        if mobject.source_id == source_id and source_id is not None:
-                            return mobject
-                    
-                # auto-disconnect using tex1 -> tex2 -> tex3, where tex3 removes previous auto-disconnect information
-                # I think the only difference is that now, we are no longer checking for self.target_graph.contains(source_id)
-                # becuase tex3 can remove that 
-                for mobject in self.source_graph.dynamic_mobjects:
-                    if mobject.source_id == source_id and source_id is not None:
-                        return mobject
-                    
-  
-                
-                return None
-    
-    def find_target_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
-        
-        if self.target_graph.contains(id):
-            return self.target_graph.find_dynamic_mobject(id)
-        else:
-            target_id = self.source_graph.get_dynamic_mobject(id).target_id
-            if target_id is not None and self.target_graph.contains(target_id):
-                return self.target_graph.find_dynamic_mobject(target_id)
-            else:
-                source_id = self.source_graph.find_dynamic_mobject(id).source_id
-                for mobject in self.target_graph.dynamic_mobjects:
-                    if mobject.id == source_id and source_id is not None:
-                        return mobject
-
-                return None
- 
-    """
-    
-    """
-    def find_source_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
-
-        if self.source_graph.contains(id):
-            return self.source_graph.find_dynamic_mobject(id)
-        else:
-            source_id = self.target_graph.get_dynamic_mobject(id).source_id
-            if source_id is not None and self.source_graph.contains(source_id):
-                return self.source_graph.find_dynamic_mobject(source_id)
-            else:
-                for mobject in self.source_graph.dynamic_mobjects:
-                    if mobject.source_id == id:
-                        return mobject
-                
-                if self.target_graph.contains(source_id):
-                    for mobject in self.source_graph.dynamic_mobjects:
-                        if mobject.source_id == source_id:
-                            return mobject
-                
-                return None
-    
-    def find_target_dynamic_mobject(self, id: UUID) -> DynamicMobject | None:
-        if self.target_graph.contains(id):
-            return self.target_graph.find_dynamic_mobject(id)
-        else:
-            target_id = self.source_graph.get_dynamic_mobject(id).target_id
-            if target_id is not None and self.target_graph.contains(target_id):
-                return self.target_graph.find_dynamic_mobject(target_id)
-            else:
-                source_id = self.source_graph.find_dynamic_mobject(id).source_id
-                for mobject in self.target_graph.dynamic_mobjects:
-                    if mobject.id == source_id:
-                        return mobject
-
-                return None
-    """
-
     def has_source(self, id: UUID):
         return True if self.find_source_dynamic_mobject(id) is not None else False
     
@@ -956,7 +890,7 @@ class GraphStateInterface():
     
 
     @abstractmethod
-    def scene_add(self):
+    def scene_add(self, mobject: MobjectIdentity):
         raise NotImplementedError()
     
     @abstractmethod
@@ -964,20 +898,21 @@ class GraphStateInterface():
         raise NotImplementedError()
     
     @abstractmethod
-    def scene_remove(self):
+    def scene_remove(self, mobject: MobjectIdentity):
         raise NotImplementedError()
     
 
-    @abstractmethod
-    def construct_introducer_animation(self, mobject: DynamicMobject):
-        raise NotImplementedError()
+    #@abstractmethod
+    #def construct_introducer_animation(self, mobject: DynamicMobject):
+    #    raise NotImplementedError()
 
     @abstractmethod
     def construct_remover_animation(self, mobject: DynamicMobject):
         raise NotImplementedError()
+
     
     
-    
+
 
 
 
@@ -1022,14 +957,54 @@ class TransformState(GraphStateInterface):
     def require_default(self):
         self.manager.set_state(DefaultState(self.manager))
         
-    def scene_add(self): # pass on partial-transform FadeIn() ?
+    def scene_add(self, mobject: MobjectIdentity): # pass on partial-transform FadeIn() ?
         return
 
     def scene_wait(self):
         return
 
-    def scene_remove(self):
+    def scene_remove(self, mobject: MobjectIdentity): 
+        # FadeOut(m) after partial transforms without going to edit
+        # at some poiint we need to track ID progression to we know when partial transforms is done without an edit 
+        self.require_default()
+        self.manager.scene_remove(mobject)
+    
+    def construct_remover_animation(self, mobject: MobjectIdentity):
+        self.require_default()
+        self.manager.construct_remover_animation(mobject)
+
+class ProgressToEmpty(GraphStateInterface):
+
+    def __init__(self, *args, **kwargs):
+        self.hashset: Dict[MobjectIdentity, bool] = {}
+        super().__init__(*args, **kwargs)
+
+    def begin(self):
+        pass
+
+    def end(self):
+        pass
+
+    def complete(self):
+        for mobject, comp in self.hashset.items():
+            if mobject.current_dynamic_mobject.has_direct_points():
+                if not comp:
+                    return False
+        return True
+
+    def scene_wait(self):
         return
+
+    def scene_remove(self, mobject: MobjectIdentity): 
+        
+        self.hashset[mobject] = True
+
+        if self.complete():
+            self.manager.set_state(DefaultState(self.manager))
+    
+    def construct_remover_animation(self, mobject: MobjectIdentity):
+        return
+
 
 class DefaultState(GraphStateInterface):
 
@@ -1053,7 +1028,7 @@ class DefaultState(GraphStateInterface):
     def require_default(self):
         return
 
-    def scene_add(self):
+    def scene_add(self, mobject: MobjectIdentity):
         self.manager.save_source_graph()
 
     def scene_wait(self):
@@ -1063,8 +1038,12 @@ class DefaultState(GraphStateInterface):
         if self.manager.has_progress_manager(): # in TransformState, exists progress_manager, but we don't update on wait(), 
             self.manager.save_source_graph()
 
-    def scene_remove(self):
-        return
+    def scene_remove(self, mobject: MobjectIdentity): 
+        self.manager.set_state(ProgressToEmpty(self.manager))
+        self.manager.scene_remove(mobject)
+    
+    def construct_remover_animation(self, mobject: MobjectIdentity):
+        self.manager.set_state(ProgressToEmpty(self.manager))
     
 
 class EditState(GraphStateInterface):
@@ -1147,14 +1126,18 @@ class GraphStateManager():
     def require_default(self):
         self.state.require_default()
 
-    def scene_add(self):
-        self.state.scene_add()
+    def scene_add(self, mobject: MobjectIdentity):
+        self.state.scene_add(mobject)
         
     def scene_wait(self):
         self.state.scene_wait()
     
-    def scene_remove(self):
-        self.state.scene_remove()
+    def scene_remove(self, mobject: MobjectIdentity):
+        self.state.scene_remove(mobject)
+
+
+    def construct_remover_animation(self, mobject: MobjectIdentity):
+        self.state.construct_remover_animation(mobject)
     
 class DynamicMobjectGraph(Mobject):
 
@@ -1168,6 +1151,7 @@ class DynamicMobjectGraph(Mobject):
 
     def __init__(self):
         super().__init__()
+        graph_references.append(self)
         self.root_mobjects: Set[MobjectIdentity] = []
         self.create_manager()
 
@@ -2039,6 +2023,11 @@ class DynamicMobject(VMobject):
 
         return mobject_copy
 
+    def has_direct_points(self):
+        for mobject in self.direct_submobjects().get_family():
+            if mobject.has_points():
+                return True
+        return False
 
     """
     def __disconnect_graph_objects(self):

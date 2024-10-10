@@ -177,6 +177,7 @@ class AbstractDynamicTransform(Animation):
     def progress(
         cls,
         mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
+        config = None,
         **kwargs
     ):
         scene_manager = SceneManager.scene_manager()
@@ -204,7 +205,7 @@ class AbstractDynamicTransform(Animation):
                 if transform_manager.transform_descriptor.is_continuous_ancestor(mobject.id, descendant.id):
                     participants.add(descendant.id)
 
-        animation = cls(transform_manager, participants, **kwargs)
+        animation = cls(transform_manager, participants, param=config, **kwargs)
 
         def begin_scene(scene: Scene):
             # in case otherwise empty composite is configured to have direct submobjects. 
@@ -223,6 +224,7 @@ class AbstractDynamicTransform(Animation):
         cls,
         source_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
         target_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
+        config = None,
         **kwargs
     ):
         source_subgraph = cls.extract_subgraph(source_mobject)
@@ -243,7 +245,7 @@ class AbstractDynamicTransform(Animation):
         #)
 
         participants = { mobject.id for mobject in source_subgraph.dynamic_mobjects }.union({ mobject.id for mobject in target_subgraph.dynamic_mobjects })
-        animation = cls(transform_manager, participants, **kwargs)
+        animation = cls(transform_manager, participants, param=config, **kwargs)
 
         def begin_scene(scene: Scene):
             # in case otherwise empty composite is configured to have direct submobjects. 
@@ -262,6 +264,7 @@ class AbstractDynamicTransform(Animation):
         cls,
         source_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
         target_mobject: DynamicMobject | DynamicMobjectSubgraph | List[DynamicMobject | DynamicMobjectSubgraph | Any],
+        config = None,
         **kwargs
     ):
         source_subgraph = cls.extract_subgraph(source_mobject)
@@ -304,13 +307,12 @@ class AbstractDynamicTransform(Animation):
         for mobject in source_graph.dynamic_mobjects:
             if mobject.id not in participants:
                 mobject_target = transform_manager.transform_descriptor.find_target_dynamic_mobject(mobject.id)
-                print(f"MOBJECT {mobject.id} and target(id).id=", "x" if mobject_target is None else mobject_target.id)
+                #print(f"MOBJECT {mobject.id} and target(id).id=", "x" if mobject_target is None else mobject_target.id)
                 if not none(mobject_target) and mobject_target.id in participants:
                     participants_extra.add(mobject.id)
 
         participants = participants.union(participants_extra)
-
-        animation = cls(transform_manager, participants, **kwargs)
+        animation = cls(transform_manager, participants, param=config, **kwargs)
 
         def begin_scene(scene: Scene):
             # in case otherwise empty composite is configured to have direct submobjects. 
@@ -330,8 +332,13 @@ class AbstractDynamicTransform(Animation):
         transform_manager: AbstractDynamicTransformManager,
         ids: Set[UUID],
         run_time: float | None = None, 
+        param = None,
         **kwargs
     ):
+        self.param = param
+        if self.param is None:
+            self.param = {}
+
         self.provided_run_time = run_time
         if run_time is None:
             run_time = 1
@@ -823,6 +830,31 @@ class TransformInStages(AbstractDynamicTransform):
         self._lag_ratio = lag_ratio
         self.track_run_time = track_run_time
         super().__init__(transform_manager, ids, **kwargs)
+
+    def apply_special_intro(self, itinerary: DynamicMobjectTransformItinerary):
+
+        if "intro" in self.param:
+            intro = self.param["intro"]
+        else:
+            return
+
+        if issubclass(intro, Animation):
+            itinerary.set_animation_generator(lambda source, target: intro(target))
+        else:
+            raise Exception("intro-config only supports Introducer(target) syntax")
+        
+    def apply_special_remover(self, itinerary: DynamicMobjectTransformItinerary):
+
+        if "outro" in self.param:
+            intro = self.param["outro"]
+        else:
+            return
+        
+        if issubclass(intro, Animation):
+            itinerary.set_animation_generator(lambda source, target: intro(source))
+        else:
+            raise Exception("outro-config only supports Remover(target) syntax")
+
     
     def apply(self):
 
@@ -838,12 +870,18 @@ class TransformInStages(AbstractDynamicTransform):
                 itinerary.target_mobject = self.config.source_graph.find_dynamic_mobject(itinerary.id).direct_submobjects().copy().fade(1)
                 itinerary.set_track(self.remover_track)
 
+                self.apply_special_remover(itinerary)
+
             if self.config.transform_descriptor.is_introducer(itinerary.id):
                 itinerary.source_mobject = self.config.target_graph.find_dynamic_mobject(itinerary.id).direct_submobjects().copy().fade(1)
                 itinerary.set_track(self.introducer_track)
 
+                self.apply_special_intro(itinerary)
+
             if self.config.transform_descriptor.is_transformer(itinerary.id):
                 itinerary.set_track(self.transformer_track)
+
+                self
 
             #if itinerary.id in self.config.prevent_ids:
             #    itinerary.track.set_parent(None)
