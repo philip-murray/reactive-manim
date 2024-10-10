@@ -17,7 +17,7 @@ def intercept_scene_init(self, *args, **kwargs):
 
 Scene.__init__ = intercept_scene_init
 
-
+"""
 animation_init = Animation.__init__
 
 def intercept_animation_init(self, *args, **kwargs):
@@ -37,7 +37,7 @@ def intercept_animation_init(self, *args, **kwargs):
             SceneManager.construct_introducer_animation(mobject)
 
 Animation.__init__ = intercept_animation_init
-
+"""
 
 
 def attach_progress_interceptors(scene: Scene) -> SceneManager:
