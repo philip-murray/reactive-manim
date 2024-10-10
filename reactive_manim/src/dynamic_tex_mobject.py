@@ -507,8 +507,6 @@ class Term(MathComponent):
         ):
         
         self.base = self.adapt_input(term)
-        #print("BASE ISx ", self.base, type(self.base))
-
         self._subscript = self.adapt_input(subscript)
         self._superscript = self.adapt_input(superscript)
 
@@ -655,9 +653,7 @@ class Parentheses(MathComponent):
     @reactive
     def inner(self, inner: Any):
         self._inner = self.adapt_input(inner)
-        
-
-
+    
     def __len__(self) -> int:
         return len(self._inner)
 

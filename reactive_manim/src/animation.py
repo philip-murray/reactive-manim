@@ -307,7 +307,6 @@ class AbstractDynamicTransform(Animation):
         for mobject in source_graph.dynamic_mobjects:
             if mobject.id not in participants:
                 mobject_target = transform_manager.transform_descriptor.find_target_dynamic_mobject(mobject.id)
-                #print(f"MOBJECT {mobject.id} and target(id).id=", "x" if mobject_target is None else mobject_target.id)
                 if not none(mobject_target) and mobject_target.id in participants:
                     participants_extra.add(mobject.id)
 

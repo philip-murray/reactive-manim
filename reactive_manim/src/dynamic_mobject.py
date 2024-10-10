@@ -627,12 +627,10 @@ class GraphTransformDescriptor():
         
 
     def find_target_dynamic_mobject_(self, id: UUID, checked: List[DynamicMobject]) -> DynamicMobject | None:
-        #print("FTDM")
         if id is None:
             raise Exception()
         
         checked.add(id)
-        #print("A")
 
         # DIRECT MATCH
         if self.target_graph.contains(id):
@@ -643,7 +641,7 @@ class GraphTransformDescriptor():
 
             if not none(target_id) and self.target_graph.contains(target_id):
                 return self.target_graph.get_dynamic_mobject(target_id)
-            #print("B")
+
             # TARGET-FINDER-1, given a <-sid- a.clone(), then target(a) = a.clone(), if there only exists one a.clone()
             for mobject in self.target_graph.dynamic_mobjects:
                 if mobject.source_id == id:
@@ -652,7 +650,7 @@ class GraphTransformDescriptor():
                     # a = MathString("a")
                     # tex1 = MathTex(a)
                     # tex2 = MathTex(a)  REQUIRED-PREVENT-ID since tex1[a].id and tex2[a].id have the same itinerary
-            #print("C") 
+
 
 
             """
@@ -1009,7 +1007,7 @@ class ProgressToEmpty(GraphStateInterface):
 class DefaultState(GraphStateInterface):
 
     def begin(self):
-        return
+        self.manager.graph.set_auto_disconnect_memory() 
     
     def end(self):
         return
@@ -1149,11 +1147,23 @@ class DynamicMobjectGraph(Mobject):
         scene_manager = SceneManager.scene_manager()
         scene_manager.graph_managers[self] = GraphStateManager(self)
 
+    def set_auto_disconnect_memory(self):
+        self.auto_disconnect_memory = {}
+        for mobject in self.mobjects:
+            self.auto_disconnect_memory[mobject] = (
+                mobject.current_dynamic_mobject.id, 
+                mobject.current_dynamic_mobject.source_id, 
+                mobject.current_dynamic_mobject.target_id
+            )
+
     def __init__(self):
         super().__init__()
         graph_references.append(self)
         self.root_mobjects: Set[MobjectIdentity] = []
         self.create_manager()
+
+        self.auto_disconnect_memory: Dict[MobjectIdentity, Tuple[UUID, UUID, UUID]] = {}
+
 
     @property
     def mobjects(self) -> List[MobjectIdentity]:
@@ -1305,6 +1315,10 @@ class DynamicMobjectGraph(Mobject):
         
         parent.children.add(child)
         child.parent = parent
+
+        
+
+
 
     def disconnect_parent_child(self, parent: MobjectIdentity, child: MobjectIdentity):
 
@@ -1464,7 +1478,9 @@ class GraphEditManager():
 
         # want to make it so dynamic_mobject (or child) looks like the clone
         # 
-        
+
+
+
         mobject1 = clone_dynamic_mobject
         mobject2 = dynamic_mobject
 
@@ -1476,9 +1492,30 @@ class GraphEditManager():
                     pairs.append((m1, m2))
 
         for (m1, m2) in pairs:
+            m1.reactive_lock = True
+            m2.reactive_lock = True
+
             m1.id, m2.id = m2.id, m1.id
             m1.source_id, m2.source_id = m2.source_id, m1.source_id
             m1.target_id, m2.target_id = m2.target_id, m1.target_id
+
+            m1.reactive_lock = False
+            m2.reactive_lock = False
+
+        # AUTO-DISCONNECT BOOMERANG ID-POLICY
+        # if we are using auto-disconnect to get a term, this will detect if it is apart of tex[0] = descendant(tex[0])
+        
+        return
+
+        for current_dynamic_mobject in dynamic_mobject.get_dynamic_family():
+            if current_dynamic_mobject.identity in self.graph.auto_disconnect_memory:
+                #print("FOUND MATCH ", current_dynamic_mobject.tex_string)
+                id, source_id, target_id = self.graph.auto_disconnect_memory[current_dynamic_mobject.identity]
+                current_dynamic_mobject.reactive_lock = True
+                current_dynamic_mobject.id = id
+                current_dynamic_mobject.source_id = source_id
+                current_dynamic_mobject.target_id = target_id
+                current_dynamic_mobject.reactive_lock = False
         
 
 
@@ -1794,7 +1831,7 @@ class DynamicMobject(VMobject):
         self._save_y: float | None = None
         self.arrange_function = None
 
-
+        self.reactive_lock = False
         self.super_init = True
         super().__init__(**kwargs)
         self.super_init = False
@@ -1883,7 +1920,9 @@ class DynamicMobject(VMobject):
             return
         
         if self.invalidation_lock():
-            print("SAFE RETURN")
+            return
+
+        if self.reactive_lock:
             return
         
         if not self.has_graph():
@@ -1900,8 +1939,10 @@ class DynamicMobject(VMobject):
         if self.super_init:
             return
         
+        if self.reactive_lock:
+            return
+        
         if self.invalidation_lock():
-            print("SAFE RETURN")
             return
         
         if not self.has_graph():
@@ -2029,22 +2070,6 @@ class DynamicMobject(VMobject):
                 return True
         return False
 
-    """
-    def __disconnect_graph_objects(self):
-
-        mobject_graph = self.mobject_identity.mobject_graph
-
-        self.mobject_identity.mobject_graph = None
-
-        def restore_graph_objects():
-            self.mobject_identity.mobject_graph = mobject_graph
-
-        self.restore_graph_objects_function = restore_graph_objects
-
-    def __restore_graph_objects(self):
-        self.restore_graph_objects_function()
-    """
-
     def __deepcopy__(self, memo):
 
         if memo.get("override"):
@@ -2060,49 +2085,6 @@ class DynamicMobject(VMobject):
         copy_graph = DynamicMobjectGraph()
         copy_graph.root_mobjects = { copy_mobject.identity }
         return copy_mobject
-
-    """
-    def __deepcopy__(self, memo):
-
-        if memo.get("graph"):
-            return super().__deepcopy__(memo)
-        
-        copy_graph = DynamicMobjectGraph()
-
-        parent = self.mobject_identity.parent
-        self.mobject_identity.parent = None
-        copy_mobject = copy.deepcopy(self, memo={ self.graph: copy_graph })
-        copy_graph.root_mobjects = { copy_mobject }
-        return copy_mobject
-    """
-
-    """
-    def copy(self) -> DynamicMobject:
-                
-        dynamic_family = self.get_dynamic_family()
-
-        for mobject in dynamic_family:
-            mobject.__disconnect_graph_objects()
-
-        parent = self.mobject_identity.parent
-        self.mobject_identity.parent = None
-
-        copy_mobject = super().copy()
-        
-        if not isinstance(copy_mobject, DynamicMobject):
-            raise Exception()
-
-        self.mobject_identity.parent = parent
-
-        for mobject in dynamic_family:
-            mobject.__restore_graph_objects()
-        
-        copy_graph = DynamicMobjectGraph()
-        copy_graph.root_mobjects = { copy_mobject.identity }
-        copy_mobject.identity.mobject_graph = copy_graph
-
-        return copy_mobject
-    """
         
     def clone(self) -> DynamicMobject:
         copy_mobject = self.copy()
@@ -2112,149 +2094,6 @@ class DynamicMobject(VMobject):
             mobject.id = uuid.uuid4()
 
         return copy_mobject
-    
-    def become(self, mobject: DynamicMobjectType) -> DynamicMobjectType:
-        self.is_current_dynamic_mobject_guard()
-
-        if not isinstance(mobject, DynamicMobject):
-            raise TypeError(
-                f"{type(self).__name__}.become() recieved a standard mobject."
-                f"To use a standard mobject, for example, a Square(), try using `${type(self).__name__}.become(Dynamic(Square()))`"
-            )
-        
-        self.begin_edit()
-        self.end_edit()
-
-        become_mobject = mobject.clone()
-        #numerator = become_mobject.numerator
-        #for mob in become_mobject.get_dynamic_family():
-        #    print("BECOME MOBJECT MEMBER ", mob, mob.id, mob is numerator)
-        empty = DynamicMobject(construct_graph=False)
-
-        become_mobject.mobject_identity.current_dynamic_mobject = empty
-        empty.mobject_identity = become_mobject.mobject_identity
-        
-
-        empty.begin_edit()
-        empty.end_edit() #this will remove become_mobject.children from it's previous MI
-
-        #print("CHECK PAR ", empty.has_graph(), empty.children, numerator.parent)
-
-        self.mobject_identity.current_dynamic_mobject = become_mobject
-        become_mobject.mobject_identity = self.mobject_identity
-
-        become_mobject.begin_edit()
-        self.mobject_identity.override_permit_auto_disconnects = True
-        #print("NUMERATOR PARENT ", numerator.parent)
-        become_mobject.end_edit()
-        return become_mobject
-    
-    def become_(self, mobject: DynamicMobjectType) -> DynamicMobjectType:
-        self.is_current_dynamic_mobject_guard()
-
-        if not isinstance(mobject, DynamicMobject):
-            raise TypeError(
-                f"{type(self).__name__}.become() recieved a standard mobject."
-                f"To use a standard mobject, for example, a Square(), try using `${type(self).__name__}.become(Dynamic(Square()))`"
-            )
-        
-
-
-        GR = self.graph
-        
-        mobject_centers = {}
-        for vertex in mobject.get_dynamic_family():
-            mobject_centers[vertex] = vertex.get_center()
-
-        become_mobject = mobject.clone()
-        print("BECOME PARENT ", become_mobject.parent)
-
-        become_mobject_m = {}
-
-        for c1 in become_mobject.children:
-            for c2 in mobject.children:
-                if c1.source_id == c2.id:
-                    print(c1.id, c1 in become_mobject.children)
-                    become_mobject_m[c2] = c1
-
-        
-        
-        mobject_children = mobject.children.copy()
-
-        for child in mobject_children:
-            mobject.replace(child, child.clone())
-
-        for child in mobject_children:
-            print(become_mobject_m[child].id, become_mobject_m[child] in become_mobject.children)
-            become_mobject.replace(become_mobject_m[child], child)
-        
-        """
-        mobject1, mobject2 = mobject, mobject.clone()
-
-        children1 = mobject1.children.copy()
-        children2 = mobject2.children.copy()
-
-        m = {}
-        for child in children2:
-            b = False
-            for mobject in children1:
-                if mobject.id == child.source_id:
-                    m[child] = mobject
-                    b = True
-            if not b:
-                raise Exception()
-
-        for child in children1:
-            mobject1.identity.change_parent_mobject = child.identity
-            mobject1.identity.change_parent_mobject_replacement = child.clone()
-            mobject1.identity.invalidate()
-
-        for child in children2:
-            mobject2.identity.change_parent_mobject = child.identity
-            mobject2.identity.change_parent_mobject_replacement = m[child]
-            mobject2.identity.invalidate()
-        """
-
-        self.begin_edit()
-        self.end_edit() # send any edit notification ? 
-
-        class MyDyn(DynamicMobject):
-            pass
-
-        empty = MyDyn(construct_graph=False)
-        empty.mobject_identity = None
-        become_mobject.mobject_identity.current_dynamic_mobject = empty
-
-        become_mobject.mobject_identity = self.mobject_identity
-        self.mobject_identity.current_dynamic_mobject = become_mobject
-        self.mobject_identity.override_permit_auto_disconnects = True
-
-        print("MI 1", become_mobject.mobject_identity)
-
-        raise Exception(GR is become_mobject.graph)
-
-        become_mobject.begin_edit()
-        print("MI 1", become_mobject.mobject_identity)
-        print("TYPE OF BECO MOBJECT ", type(become_mobject))
-        become_mobject.end_edit()
-
-        return
-        """
-        self.identity.set_dynamic_mobject(empty)
-
-        mobject2.identity.set_dynamic_mobject(empty)
-        mobject2.mobject_identity = None
-        mobject2.mobject_identity = self.mobject_identity
-
-        for child in children1:
-            child.identity.mobject_center = mobject_centers[child]
-
-        self.mobject_identity.set_dynamic_mobject(mobject2)
-
-        for child in children1:
-            child.identity.mobject_center = mobject_centers[child]
-        return mobject2
-        """
 
     def get_dynamic_family(self) -> List[DynamicMobject]:
         family: Set[DynamicMobject] = set()
@@ -2283,17 +2122,21 @@ class DynamicMobject(VMobject):
     
     def register_child(self, mobject: DynamicMobject) -> DynamicMobject:
         return self.identity.register_child(mobject)
-
+    
+    #@reactive
     def save_x(self):
         self._save_x = self.get_x()
 
+    #@reactive
     def save_y(self):
         self._save_y = self.get_y()
 
+    #@reactive
     def save_center(self):
         self.save_x()
         self.save_y()
 
+    #@reactive
     def restore_x(self, propagate=True):
         factor = self._save_x - self.get_x()
         if propagate:
@@ -2302,6 +2145,7 @@ class DynamicMobject(VMobject):
             self.shift(np.array([ factor, 0, 0 ]))
         return self
     
+    #@reactive
     def restore_y(self, propagate=True) -> DynamicMobject:
         factor = self._save_y - self.get_y()
         if propagate:
@@ -2363,6 +2207,7 @@ class DynamicMobject(VMobject):
         return self.identity.source_ids[-1]
     
     @source_id.setter
+    #@reactive
     def source_id(self, id: UUID):
         self.identity.source_ids.append(id)
 
@@ -2374,6 +2219,7 @@ class DynamicMobject(VMobject):
         return self.identity.target_ids[-1]
     
     @target_id.setter
+    #@reactive
     def target_id(self, id: UUID):
         self.identity.target_ids.append(id)
 
