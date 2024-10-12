@@ -8,8 +8,6 @@
 Easily create and animate math expressions in manim. Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
 
-## Intro
-
 <br></br>
 
 **Reusable Math Components**
@@ -23,8 +21,9 @@ Easily create and animate math expressions in manim. Reactive-manim reduces the 
 
 <br></br>
 **Automatic Animation**
-![loading](content/natural_log_animation.gif)
 
+![loading](content/natural_log_animation.gif)
+<br></br>
 ![loading](content/matrix_animation.gif)
 
 
