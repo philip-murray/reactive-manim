@@ -1,15 +1,14 @@
-# REACTIVE MANIM
+# Reactive Manim
 
 ![loading](content/cropped_sigmoid.png)
 
+![loading](https://img.shields.io/badge/license-MIT-green)
 ![loading](https://img.shields.io/badge/release-v0.0.2-blue)
 
-Easily create and animate math expressions in manim.
+Easily create and animate math expressions in manim. Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
 
 ## Intro
-
-Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
 <br></br>
 
@@ -26,7 +25,7 @@ Reactive-manim reduces the programming overhead of creating animations that anim
 **Automatic Animation**
 ![loading](content/natural_log_animation.gif)
 
-![loading](content/matrix_animation.png)
+![loading](content/matrix_animation.gif)
 
 
 ➡️ [Examples](#examples) ⬅️ 
