@@ -1,23 +1,16 @@
+# REACTIVE MANIM
 
-### Sections
+![loading](content/cropped_sigmoid.png)
 
-[Intro](#intro)
-[Install](#install)
-[Examples](#examples)
-[Guide](#guide)
+![loading](https://img.shields.io/badge/release-v0.0.2-blue)
 
-<br>
+Easily create and animate math expressions in manim.
 
-```sh
-pip install reactive-manim
-```
-
-<br>
-<br>
 
 ## Intro
 
-This project attempts to reduce the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state. I have only tested this with **ManimCE version 0.18.1, Cairo**. 
+Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
+
 <br></br>
 
 **Reusable Math Components**
@@ -31,12 +24,9 @@ This project attempts to reduce the programming overhead of creating animations 
 
 <br></br>
 **Automatic Animation**
+![loading](content/natural_log_animation.gif)
 
-Here is a sample animation, and the code used to create it:
-
-![loading](content/negative_exp_deriv_animation.gif)
-
-![loading](content/negative_exp_deriv_code.png)
+![loading](content/matrix_animation.png)
 
 
 ➡️ [Examples](#examples) ⬅️ 
@@ -47,7 +37,7 @@ Click for more examples.
 
 ## Install
 
-⚠️ This project is meant for use with **ManimCE version 0.18.1, Cairo**.
+⚠️ An extension for **ManimCE version 0.18.1**
 
 ```sh
 pip install reactive-manim
@@ -79,7 +69,6 @@ Note: The stuttering in the animations is a result of using gif files for the RE
 ```python
 class ExponentScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
 
         term1, term2 = Term("2"), Term("2", "4")
         tex = MathTex(term1, Parentheses(term2))
@@ -105,7 +94,6 @@ class ExponentScene(Scene):
 ```python
 class NaturalLogScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
 
         tex = MathTex("a", "=", "b")
         self.add(tex).wait(0.5)
@@ -135,7 +123,6 @@ class NaturalLogScene(Scene):
 ```python
 class CasesScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
 
         tex = MathTex("f(x) =", MathCases(
             CaseLine(r"b,     ", r"\text{even}(x)"),
@@ -168,7 +155,6 @@ class CasesScene(Scene):
 ```python
 class MatrixScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
 
         y0, y1 = Term("y", subscript=0), Term("y", subscript=1)
         x0, x1 = Term("x", subscript=0), Term("x", subscript=1)
@@ -218,7 +204,6 @@ This example makes careful use of auto-disconnect.
 ```python
 class EquationVariablesScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
         
         y_pred = MathString("6.75")
         y_act = MathString("9.0")
@@ -259,7 +244,6 @@ However, the same result could be accomplished without `animation.intercept()` u
 ```python
 class MathListScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
 
         tex = MathList("4", "7", "1", "2")
         self.add(tex).wait(1)
@@ -296,7 +280,6 @@ This uses `animation.intercept()`, which is not discussed in the guide section b
 ```python
 class QuadraticScene(Scene):
     def construct(self):
-        attach_progress_interceptors(self)
         
         a1, p1, b1 = MathTex("a", "+", "b")
 
