@@ -35,9 +35,9 @@ def intercept_animation_init(self, *args, **kwargs):
 
         dynamic_mobjects = extract_direct_dynamic_mobjects(self.mobject)
 
-        #for mobject in dynamic_mobjects:
-        #    for dm in mobject.get_dynamic_family():
-        #        SceneManager.construct_introducer_animation(dm)
+        for mobject in dynamic_mobjects:
+            for dm in mobject.get_dynamic_family():
+                SceneManager.scene_manager().construct_introducer_animation(dm)
 
 Animation.__init__ = intercept_animation_init
 
@@ -208,6 +208,8 @@ class SceneManager():
     def construct_remover_animation(self, mobject: DynamicMobject):
         self.graph_managers[mobject.graph].construct_remover_animation(mobject.identity)
 
+    def construct_introducer_animation(self, mobject: MobjectIdentity):
+        self.graph_managers[mobject.graph].construct_introducer_animation(mobject.identity)
 
     
 class GraphProgressManager():
@@ -239,8 +241,10 @@ class GraphProgressManager():
         
         if clear_source_target_flags:
             for mobject in self.graph.dynamic_mobjects:
+                mobject.reactive_lock = True
                 mobject.source_id = None
                 mobject.target_id = None
+                mobject.reactive_lock = False
 
 
         self.source_graph = self.graph.copy()
@@ -252,8 +256,10 @@ class GraphProgressManager():
 
 
         for mobject in self.source_graph.dynamic_mobjects:
+            mobject.reactive_lock = True
             mobject.source_id = None # this is applied to GOC -> source_graph
             mobject.target_id = None # this isn't applied to GOC -> target_graph
+            mobject.reactive_lock = False
 
         self.target_graph = self.graph.copy()
         self.target_mobjects = { mobject.id: mobject for mobject in self.graph.mobjects }
@@ -370,10 +376,10 @@ class AbstractDynamicTransformManager():
         for container in self.transform_containers.values(): # ADD TRANSFORM-CONTAINERS TO SCENE
             self.scene.scene_add(container)
 
-        for mobject in self.observers(): # REMOVE OBSERVERS FROM SCENE
+        for mobject in self.filter_observers(self.observers()): # REMOVE OBSERVERS FROM SCENE
             mobject.submobjects = []
             
-        for mobject in self.observers():  # due to auto-disconnect, this could corrupt progress(src) after doing from_copy(src, trg) ?
+        for mobject in self.filter_observers(self.observers()):  # due to auto-disconnect, this could corrupt progress(src) after doing from_copy(src, trg) ?
             self.scene.scene_add(mobject).scene_remove(mobject)
 
         for id, container in self.transform_containers.items(): # SET TIME=0 MOBJECT FOR EACH TRANSFORM-CONTAINER
@@ -387,12 +393,21 @@ class AbstractDynamicTransformManager():
         self.restructure_participant_observers(participant_observers=self.transform_containers.keys())
     
 
+    def filter_observers(self, observers):
+
+        arr = []
+        for m in observers:
+            if m.identity not in self.hashset:
+                arr.append(m)
+
+        return arr
+
     def restructure_participant_observers(self, participant_observers):
 
         
         # remember that there can be two (mobject.id) observers per transform_container[id], in the case of replacement_transform
 
-        for mobject in self.observers():
+        for mobject in self.filter_observers(self.observers()):
             if mobject.id in participant_observers:
                 
                 def is_source_or_target_parent(child_id):
@@ -907,6 +922,10 @@ class GraphStateInterface():
     @abstractmethod
     def construct_remover_animation(self, mobject: DynamicMobject):
         raise NotImplementedError()
+    
+    @abstractmethod
+    def construct_introducer_animation(self, mobject: MobjectIdentity):
+        raise NotImplementedError()
 
     
     
@@ -919,19 +938,28 @@ class TransformState(GraphStateInterface):
     def __init__(
         self, 
         manager: GraphStateManager,
-        transform_manager: AbstractDynamicTransformManager
+        #transform_manager: AbstractDynamicTransformManager
     ):
         self.manager = manager
-        self.transform_manager = transform_manager
+        self.transform_manager: Optional[AbstractDynamicTransformManager] = None
+        #self.transform_manager = transform_manager
 
     def begin(self):
-        self.transform_manager.begin_transforms()
+        #self.transform_manager.begin_transforms()
+
+        self.hashset: Dict[MobjectIdentity, bool] = {}
     
     def end(self):
-        self.transform_manager.end_transforms()
+        #self.transform_manager.end_transforms()
         #detach_supplemental_ids = self.transform_manager.end_transforms()
         #self.manager.create_progress_manager2()
         #self.manager.progress_manager.save_source_graph(clear_source_target_flags=detach_supplemental_ids)
+        if self.transform_manager is not None:
+            self.transform_manager.end_transforms()
+        else:
+            self.manager.save_source_graph(clear_source_target_flags=True)
+
+        self.manager.graph.set_auto_disconnect_memory()
 
 
     def begin_edit(self, mobject: MobjectIdentity):
@@ -949,7 +977,13 @@ class TransformState(GraphStateInterface):
         self, 
         transform_manager: AbstractDynamicTransformManager
     ):
-        self.transform_manager.matches_construction_guard(transform_manager)
+        if self.transform_manager is None:
+            self.transform_manager = transform_manager
+            self.transform_manager.hashset = self.hashset
+            self.transform_manager.begin_transforms()
+        else:
+            self.transform_manager.matches_construction_guard(transform_manager)
+            
         return self.transform_manager
     
     def require_default(self):
@@ -966,6 +1000,11 @@ class TransformState(GraphStateInterface):
         # at some poiint we need to track ID progression to we know when partial transforms is done without an edit 
         self.require_default()
         self.manager.scene_remove(mobject)
+
+    def construct_introducer_animation(self, mobject: MobjectIdentity):
+        self.hashset[mobject] = True
+        if self.transform_manager is not None:
+            self.transform_manager.recover_mobject(mobject.current_dynamic_mobject)
     
     def construct_remover_animation(self, mobject: MobjectIdentity):
         self.require_default()
@@ -990,6 +1029,9 @@ class ProgressToEmpty(GraphStateInterface):
                     return False
         return True
 
+    def scene_add(self, mobject: MobjectIdentity):
+        return # I think FadeOut(m) can add it, 
+
     def scene_wait(self):
         return
 
@@ -1007,7 +1049,8 @@ class ProgressToEmpty(GraphStateInterface):
 class DefaultState(GraphStateInterface):
 
     def begin(self):
-        self.manager.graph.set_auto_disconnect_memory() 
+        #self.manager.graph.set_auto_disconnect_memory() 
+        return
     
     def end(self):
         return
@@ -1020,7 +1063,9 @@ class DefaultState(GraphStateInterface):
         self, 
         transform_manager: AbstractDynamicTransformManager
     ):
-        self.manager.set_state(TransformState(self.manager, transform_manager))
+        #self.manager.set_state(TransformState(self.manager, transform_manager))
+        self.manager.set_state(TransformState(self.manager))
+        self.manager.accept_transform_manager(transform_manager)
         return transform_manager
     
     def require_default(self):
@@ -1029,6 +1074,24 @@ class DefaultState(GraphStateInterface):
     def scene_add(self, mobject: MobjectIdentity):
         self.manager.save_source_graph()
 
+        #PATCH
+
+        # so previously DefaultState().begin() would set_auto_disconnect_memory, 
+        # so immediately on edit -> default_state, set_auto_disconnect_memory would get cleared
+        # so we need to have it on end_transforms()
+
+        #self.manager.set_state(TransformState(self.manager))
+        #self.manager.set_state(DefaultState(self.manager)) # need to trigger set_auto_disconnect_memory()
+
+        # PATCH CONSEQUENCE
+        # I guess we don't have to do .save_source_graph() if we do TransformState().end()
+
+        #self.manager.graph.set_auto_disconnect_memory() # This should be on leaving transform-state, which is caused by scene_add
+
+        # PATCH PATCH, to prevent cross-ID deletion on scene.add()
+        self.manager.graph.set_auto_disconnect_memory()
+
+
     def scene_wait(self):
         # a graph that is not added to the scene will not have a progress manager, it is assumed to still be in construction
         # on scene.add() it gets its first progress point, and wait() refresh it, unless in transform mode which assumes wait() is apart of transformation
@@ -1036,12 +1099,20 @@ class DefaultState(GraphStateInterface):
         if self.manager.has_progress_manager(): # in TransformState, exists progress_manager, but we don't update on wait(), 
             self.manager.save_source_graph()
 
+        self.manager.graph.add_auto_disconnect_memory()
+
+        #self.manager.graph.set_auto_disconnect_memory() 
+
     def scene_remove(self, mobject: MobjectIdentity): 
         self.manager.set_state(ProgressToEmpty(self.manager))
         self.manager.scene_remove(mobject)
     
     def construct_remover_animation(self, mobject: MobjectIdentity):
         self.manager.set_state(ProgressToEmpty(self.manager))
+
+    def construct_introducer_animation(self, mobject: MobjectIdentity):
+        self.manager.set_state(TransformState(self.manager))
+        self.manager.construct_introducer_animation(mobject)
     
 
 class EditState(GraphStateInterface):
@@ -1056,6 +1127,7 @@ class EditState(GraphStateInterface):
         self.edit_manager = GraphEditManager(manager.graph, mobject)
 
     def begin(self):
+        
         for mobject in self.manager.graph.mobjects:
             try:
                 center = mobject.current_dynamic_mobject.get_center()
@@ -1101,6 +1173,10 @@ class GraphStateManager():
         return self.progress_manager is not None
     
     
+    def require_default_if_transform(self):
+        if isinstance(self.state, (TransformState, ProgressToEmpty)):
+            self.set_state(DefaultState(self))
+
     def __deepcopy__(self, memo):
         raise Exception()
     
@@ -1136,6 +1212,9 @@ class GraphStateManager():
 
     def construct_remover_animation(self, mobject: MobjectIdentity):
         self.state.construct_remover_animation(mobject)
+
+    def construct_introducer_animation(self, mobject: MobjectIdentity):
+        self.state.construct_introducer_animation(mobject)
     
 class DynamicMobjectGraph(Mobject):
 
@@ -1149,6 +1228,9 @@ class DynamicMobjectGraph(Mobject):
 
     def set_auto_disconnect_memory(self):
         self.auto_disconnect_memory = {}
+        self.add_auto_disconnect_memory()
+
+    def add_auto_disconnect_memory(self):
         for mobject in self.mobjects:
             self.auto_disconnect_memory[mobject] = (
                 mobject.current_dynamic_mobject.id, 
@@ -1316,6 +1398,15 @@ class DynamicMobjectGraph(Mobject):
         parent.children.add(child)
         child.parent = parent
 
+        for current_dynamic_mobject in child.current_dynamic_mobject.get_dynamic_family():
+            if current_dynamic_mobject.identity in parent.graph.auto_disconnect_memory:
+                id, source_id, target_id = parent.graph.auto_disconnect_memory[current_dynamic_mobject.identity]
+                current_dynamic_mobject.reactive_lock = True
+                current_dynamic_mobject.id = id
+                current_dynamic_mobject.source_id = source_id
+                current_dynamic_mobject.target_id = target_id
+                current_dynamic_mobject.reactive_lock = False
+
         
 
 
@@ -1479,8 +1570,6 @@ class GraphEditManager():
         # want to make it so dynamic_mobject (or child) looks like the clone
         # 
 
-
-
         mobject1 = clone_dynamic_mobject
         mobject2 = dynamic_mobject
 
@@ -1504,12 +1593,9 @@ class GraphEditManager():
 
         # AUTO-DISCONNECT BOOMERANG ID-POLICY
         # if we are using auto-disconnect to get a term, this will detect if it is apart of tex[0] = descendant(tex[0])
-        
-        return
 
         for current_dynamic_mobject in dynamic_mobject.get_dynamic_family():
             if current_dynamic_mobject.identity in self.graph.auto_disconnect_memory:
-                #print("FOUND MATCH ", current_dynamic_mobject.tex_string)
                 id, source_id, target_id = self.graph.auto_disconnect_memory[current_dynamic_mobject.identity]
                 current_dynamic_mobject.reactive_lock = True
                 current_dynamic_mobject.id = id
@@ -2090,7 +2176,9 @@ class DynamicMobject(VMobject):
         copy_mobject = self.copy()
 
         for mobject in copy_mobject.get_dynamic_family():
+            mobject.reactive_lock = True
             mobject.source_id = mobject.id
+            mobject.reactive_lock = False
             mobject.id = uuid.uuid4()
 
         return copy_mobject
@@ -2105,16 +2193,23 @@ class DynamicMobject(VMobject):
 
         recursive_extract(self)
         return list(family)
-        
- 
+    
     def shift(self, *vectors) -> Self:
+
+        self.manager().require_default_if_transform()
         super().shift(*vectors)
+
+        # begin_edit() causes save-mobject-centers, which restores mobject-centers after shift?
         
         if self.in_compose:
             self.shift_during_compose_flag = True
 
+        self.begin_edit()
+        self.end_edit()
+
         return self
 
+    @reactive
     def scale(self, scale_factor: float, **kwargs) -> Self:
         self.scale_factor *= scale_factor
         super().scale(self.scale_factor, **kwargs)
@@ -2123,37 +2218,51 @@ class DynamicMobject(VMobject):
     def register_child(self, mobject: DynamicMobject) -> DynamicMobject:
         return self.identity.register_child(mobject)
     
-    #@reactive
+    @reactive
     def save_x(self):
         self._save_x = self.get_x()
 
-    #@reactive
+    @reactive
     def save_y(self):
         self._save_y = self.get_y()
 
-    #@reactive
+    @reactive
     def save_center(self):
         self.save_x()
         self.save_y()
 
     #@reactive
     def restore_x(self, propagate=True):
+        
+        self.manager().require_default_if_transform()
+
         factor = self._save_x - self.get_x()
         if propagate:
             self.root_parent.shift(np.array([ factor, 0, 0 ]))
         else:
             self.shift(np.array([ factor, 0, 0 ]))
+
+        self.begin_edit()
+        self.end_edit()
         return self
     
     #@reactive
     def restore_y(self, propagate=True) -> DynamicMobject:
+
+        self.manager().require_default_if_transform()
+
+
         factor = self._save_y - self.get_y()
         if propagate:
             self.root_parent.shift(np.array([ 0, factor, 0 ]))
         else:
             self.shift(np.array([ 0, factor, 0 ]))
+
+        self.begin_edit()
+        self.end_edit()
         return self
     
+    #@reactive
     def restore_center(self, propagate=True):
         self.restore_x(propagate)
         self.restore_y(propagate)
@@ -2207,7 +2316,7 @@ class DynamicMobject(VMobject):
         return self.identity.source_ids[-1]
     
     @source_id.setter
-    #@reactive
+    @reactive
     def source_id(self, id: UUID):
         self.identity.source_ids.append(id)
 
@@ -2219,7 +2328,7 @@ class DynamicMobject(VMobject):
         return self.identity.target_ids[-1]
     
     @target_id.setter
-    #@reactive
+    @reactive
     def target_id(self, id: UUID):
         self.identity.target_ids.append(id)
 

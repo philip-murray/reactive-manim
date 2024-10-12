@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name='reactive-manim',
-    version='0.0.1',
+    version='0.0.2',
     description='A component library for ManimCE, supporting component composition and automatic animation. Supports declarative syntax for writing components inspired by React.js.',
     author='Philip Murray',
     author_email='philipmurray.code@gmail.com',

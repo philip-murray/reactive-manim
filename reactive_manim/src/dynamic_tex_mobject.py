@@ -224,10 +224,11 @@ class MathTex(MathComponent):
         return self._terms
 
     @terms.setter
-    @reactive
+    #@reactive
     def terms(self, terms: List[Any]):
         self._terms = self.adapt_terms(terms)
-        
+        self.begin_edit()
+        self.end_edit()
 
     @reactive
     def insert(self, index: int, term):
@@ -257,9 +258,6 @@ class MathTex(MathComponent):
 
     def __iter__(self):
         return iter(self._terms)
-
-AR = []
-BR = []
 
 class MathString(MathEncodable):
 
