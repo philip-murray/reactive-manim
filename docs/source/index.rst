@@ -15,3 +15,17 @@ documentation for details.
    :maxdepth: 2
    :caption: Contents:
 
+.. raw:: html
+
+    <video class='manim-video' width="808" height="454.5" controls loop autoplay src="_static/natural-log-animation.mp4">
+    </video>
+
+
+.. code-block:: python
+
+    from manim import Scene, Square
+
+    class MyScene(Scene):
+        def construct(self):
+            square = Square()
+            self.play(Create(square))
