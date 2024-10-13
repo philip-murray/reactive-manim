@@ -1,0 +1,53 @@
+name: docs_workflow
+ 
+# execute this workflow automatically when a we push to master
+on:
+  push:
+    branches: [ main ]
+ 
+jobs:
+ 
+  build_docs_job:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+ 
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.11
+ 
+      - name: Install dependencies
+        run: |
+          python -m pip install -U sphinx
+          python -m pip install sphinx-rtd-theme
+          # python -m pip install sphinxcontrib-apidoc
+          python -m pip install sphinx-autoapi
+
+      - name: make the sphinx docs
+        run: |
+          make -C docs clean 
+          # sphinx-apidoc -f -o docs/source . -H Test -e -t docs/source/_templates
+          make -C docs html
+
+      - name: Init new repo in dist folder and commit generated files
+        run: |
+          cd docs/build/html/
+          git init
+          touch .nojekyll
+          git add -A
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git commit -m 'deploy'
+
+      - name: Force push to gh-pages branch
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages
+          force: true
+          directory: ./docs/build/html
