@@ -1397,7 +1397,9 @@ class DynamicMobjectGraph(Mobject):
             def auto_disconnect_check(new_mobject):
         
                 if new_mobject.id in m:
-                    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
+                    if self in [ f() for f in new_mobject.tracked_graphs ]:
+                        new_mobject.current_dynamic_mobject.source_id = new_mobject.id
+                        new_mobject.tracked_graphs = [ ]
                     new_mobject.current_dynamic_mobject.id = uuid.uuid4()
                 else:
                     progress_manager = self.manager().progress_manager
@@ -1424,6 +1426,10 @@ class DynamicMobjectGraph(Mobject):
         
         parent.children.add(child)
         child.parent = parent
+
+        for mobject in self.connected_from_root(child):
+            mobject.tracked_graphs.append(lambda: self)
+        
 
         
 
@@ -1640,12 +1646,15 @@ class MobjectIdentity():
         self.target_ids: List[UUID] = [] 
         self.parent: MobjectIdentity | None = None
         self.children: Set[MobjectIdentity] = set()
+
+        self.tracked_graphs = []
         
         if construct_graph:
             #self.mobject_graph: DynamicMobjectGraph | None = None
             #self.mobject_graph = DynamicMobjectGraph()
             mobject_graph = DynamicMobjectGraph()
             mobject_graph.root_mobjects = { self }
+            self.tracked_graphs.append(lambda: mobject_graph)
             #self.mobject_graph.root_mobjects = { self }
 
         self.current: DynamicMobject | None = mobject
@@ -2102,6 +2111,8 @@ class DynamicMobject(VMobject):
         for mobject in self.get_dynamic_family():
             mobject.source_id = None
             mobject.target_id = None
+        
+            mobject.identity.tracked_graphs = []
         return self
 
     def merge_structure(self, other: DynamicMobject):
@@ -2109,7 +2120,7 @@ class DynamicMobject(VMobject):
         def recursive_extract(dm1, dm2):
             
             if isinstance(dm1, DynamicMobject):
-                dm1.target_id = dm2.id
+                dm2.target_id = dm1.id
 
             if len(dm1.submobjects) != len(dm2.submobjects):
                 raise Exception("merge_structure requires both mobjects to have same tree-structure")
