@@ -2081,12 +2081,43 @@ class DynamicMobject(VMobject):
 
     @reactive
     def replace(self, current: DynamicMobject, next: DynamicMobject):
-        
-        if current not in self.children:
-            raise Exception("In mobject.replace(m1, m2), m1 must be a child of mobject")
 
-        self.identity._replace_mobject = current
+        m = { child.id: child for child in self.children }
+        
+        if current.id not in m:
+            raise Exception("In mobject.replace(m1, m2), m1 must be a child of mobject")
+        
+
+        self.identity._replace_mobject = m[current.id]
         self.identity._replace_mobject_replacement = next
+
+    def interchange(self, next: DynamicMobject | Callable[[], DynamicMobject]):
+
+        if isinstance(next, DynamicMobject):
+            self.parent.replace(self, next)
+        else:
+            self.parent.replace(self, next())
+
+    def clear_tracking(self) -> Self:
+        for mobject in self.get_dynamic_family():
+            mobject.source_id = None
+            mobject.target_id = None
+        return self
+
+    def merge_structure(self, other: DynamicMobject):
+
+        def recursive_extract(dm1, dm2):
+            
+            if isinstance(dm1, DynamicMobject):
+                dm1.target_id = dm2.id
+
+            if len(dm1.submobjects) != len(dm2.submobjects):
+                raise Exception("merge_structure requires both mobjects to have same tree-structure")
+
+            for s1, s2 in zip(dm1.submobjects, dm2.submobjects):
+                recursive_extract(s1, s2)
+
+        recursive_extract(self, other)
 
     def pop(self):
         self.parent.remove(self)

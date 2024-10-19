@@ -250,6 +250,7 @@ class MathTex(MathComponent):
 
     def __getitem__(self, index: int):
         return self._terms[index]
+    
 
     @reactive
     def __setitem__(self, index: int, term):
@@ -258,6 +259,34 @@ class MathTex(MathComponent):
 
     def __iter__(self):
         return iter(self._terms)
+    
+    def equation_guard(self):
+        if len(self._terms) != 3:
+            raise Exception("LHS/RHS properties require len(tex.terms) == 3, where tex[0] is LHS, tex[1] is comparison-symbol, and tex[2] is RHS")
+    
+    @property
+    def LHS(self):
+        self.equation_guard()
+        return self._terms[0]
+    
+    @LHS.setter
+    def LHS(self, term):
+        self.equation_guard()
+        self._terms[0] = self.adapt_input(term)
+        self.begin_edit()
+        self.end_edit()
+
+    @property
+    def RHS(self):
+        self.equation_guard()
+        return self._terms[2]
+    
+    @RHS.setter
+    def RHS(self, term):
+        self.equation_guard()
+        self._terms[2] = self.adapt_input(term)
+        self.begin_edit()
+        self.end_edit()
 
 class MathString(MathEncodable):
 
