@@ -1280,6 +1280,14 @@ class DynamicMobjectGraph(Mobject):
                 return mobject
             
         return None
+
+    def __getitem__(self, id):
+
+        for mobject in self.mobjects:
+            if mobject.id == id:
+                return mobject
+        
+        raise Exception(f"No mobject with id={id} found in graph")
     
     def get_dynamic_mobject(self, id: UUID) -> DynamicMobject:
 
@@ -1364,6 +1372,8 @@ class DynamicMobjectGraph(Mobject):
         self.set_root_mobjects(next_root_mobjects)
         
 
+    
+
     def connect_parent_child(self, parent: MobjectIdentity, child: MobjectIdentity):  
 
         graph1 = parent.graph
@@ -1378,11 +1388,26 @@ class DynamicMobjectGraph(Mobject):
             root_connected_mobjects1 = graph1.mobjects
             root_connected_mobjects2 = graph2.mobjects
 
+            
+
             m = {}
             for mobject in root_connected_mobjects1:
                 m[mobject.id] = mobject
 
+            def auto_disconnect_check(new_mobject):
+        
+                if new_mobject.id in m:
+                    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
+                    new_mobject.current_dynamic_mobject.id = uuid.uuid4()
+                else:
+                    progress_manager = self.manager().progress_manager
+                    if progress_manager is not None:
+                        if new_mobject.id in progress_manager.source_mobjects:
+                            progress_manager.source_mobjects[new_mobject.id] = new_mobject
+
             for mobject in root_connected_mobjects2:
+                auto_disconnect_check(mobject)
+                continue
                 if mobject.id in m:
                     raise Exception(
                         "Mobject graph cannot contain duplicate ids."
@@ -1577,9 +1602,12 @@ class GraphEditManager():
             m1.reactive_lock = True
             m2.reactive_lock = True
 
-            m1.id, m2.id = m2.id, m1.id
-            m1.source_id, m2.source_id = m2.source_id, m1.source_id
-            m1.target_id, m2.target_id = m2.target_id, m1.target_id
+            m1.id = m2.id
+            m1.source_id = m2.source_id
+            m1.target_id = m2.target_id
+            #m1.id, m2.id = m2.id, m1.id
+            #m1.source_id, m2.source_id = m2.source_id, m1.source_id
+            #m1.target_id, m2.target_id = m2.target_id, m1.target_id
 
             m1.reactive_lock = False
             m2.reactive_lock = False
