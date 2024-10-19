@@ -9,6 +9,7 @@ from manim import *
 import functools
 
 
+
 scene_init = Scene.__init__
 
 def intercept_scene_init(self, *args, **kwargs):
@@ -279,7 +280,6 @@ class GraphProgressManager():
         for mobject in mobject_union: # stack-mobjects
             if (mobject.target_id is not None) and self.source_graph.contains(mobject.id):
                 self.source_graph.find_dynamic_mobject(mobject.id).target_id = mobject.target_id
-
 
 
 class RecoverMobject():
@@ -997,7 +997,7 @@ class TransformState(GraphStateInterface):
 
     def scene_remove(self, mobject: MobjectIdentity): 
         # FadeOut(m) after partial transforms without going to edit
-        # at some poiint we need to track ID progression to we know when partial transforms is done without an edit 
+        # at some point we need to track ID progression to we know when partial transforms is done without an edit 
         self.require_default()
         self.manager.scene_remove(mobject)
 
@@ -1215,6 +1215,7 @@ class GraphStateManager():
 
     def construct_introducer_animation(self, mobject: MobjectIdentity):
         self.state.construct_introducer_animation(mobject)
+
     
 class DynamicMobjectGraph(Mobject):
 
@@ -1237,6 +1238,7 @@ class DynamicMobjectGraph(Mobject):
                 mobject.current_dynamic_mobject.source_id, 
                 mobject.current_dynamic_mobject.target_id
             )
+                    
 
     def __init__(self):
         super().__init__()
@@ -1397,15 +1399,6 @@ class DynamicMobjectGraph(Mobject):
         
         parent.children.add(child)
         child.parent = parent
-
-        for current_dynamic_mobject in child.current_dynamic_mobject.get_dynamic_family():
-            if current_dynamic_mobject.identity in parent.graph.auto_disconnect_memory:
-                id, source_id, target_id = parent.graph.auto_disconnect_memory[current_dynamic_mobject.identity]
-                current_dynamic_mobject.reactive_lock = True
-                current_dynamic_mobject.id = id
-                current_dynamic_mobject.source_id = source_id
-                current_dynamic_mobject.target_id = target_id
-                current_dynamic_mobject.reactive_lock = False
 
         
 
@@ -1591,17 +1584,17 @@ class GraphEditManager():
             m1.reactive_lock = False
             m2.reactive_lock = False
 
-        # AUTO-DISCONNECT BOOMERANG ID-POLICY
-        # if we are using auto-disconnect to get a term, this will detect if it is apart of tex[0] = descendant(tex[0])
-
-        for current_dynamic_mobject in dynamic_mobject.get_dynamic_family():
-            if current_dynamic_mobject.identity in self.graph.auto_disconnect_memory:
-                id, source_id, target_id = self.graph.auto_disconnect_memory[current_dynamic_mobject.identity]
-                current_dynamic_mobject.reactive_lock = True
-                current_dynamic_mobject.id = id
-                current_dynamic_mobject.source_id = source_id
-                current_dynamic_mobject.target_id = target_id
-                current_dynamic_mobject.reactive_lock = False
+        # replace_source_mobject
+        for (m1, m2) in pairs:
+            m1 = m1.identity
+            m2 = m2.identity
+            
+            for graph_manager in SceneManager.scene_manager().graph_managers.values():
+                progress_manager = graph_manager.progress_manager
+                if progress_manager is not None:
+                    for idm, source_mobject in progress_manager.source_mobjects.items():
+                        if source_mobject is m2:
+                            progress_manager.source_mobjects[idm] = m1
         
 
 
