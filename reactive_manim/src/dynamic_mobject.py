@@ -279,7 +279,11 @@ class GraphProgressManager():
         # switched array from self.graph.dynamic_mobjects (which does not include removers), to mobject_union, after exponent example didn't work as expected
         for mobject in mobject_union: # stack-mobjects
             if (mobject.target_id is not None) and self.source_graph.contains(mobject.id):
-                self.source_graph.find_dynamic_mobject(mobject.id).target_id = mobject.target_id
+
+                dynamic_mobject = self.source_graph.find_dynamic_mobject(mobject.id)
+                dynamic_mobject.reactive_lock = True
+                dynamic_mobject.target_id = mobject.target_id
+                dynamic_mobject.reactive_lock = False
 
 
 class RecoverMobject():

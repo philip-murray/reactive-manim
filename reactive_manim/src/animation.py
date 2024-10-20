@@ -822,7 +822,7 @@ class TransformInStages(AbstractDynamicTransform):
         self, 
         transform_manager: AbstractDynamicTransformManager,
         ids: Set[UUID],
-        lag_ratio: float = 1,
+        lag_ratio: float = 0.4,
         track_run_time: float = 1,
         **kwargs
     ):

@@ -650,23 +650,32 @@ class Parentheses(MathComponent):
 
     def __init__(
         self,
-        inner
+        inner,
+        spacer = False
     ):
         self._inner = self.adapt_input(inner)
-        self.spacer = MathString("\mspace{-3mu}")
+        self._spacer = MathString("\mspace{-3mu}")
         self.bracket_l = BracketMathStringFragment(r"\left(")
         self.bracket_r = BracketMathStringFragment(r"\right)")
+        self.spacer = spacer
         super().__init__()
 
     def compose_tex_string(self):
 
         self._inner = self.register_child(self._inner)
-        self.spacer = self.register_child(self.spacer)
+        self._spacer = self.register_child(self._spacer)
         self.bracket_l = self.register_child(self.bracket_l)
         self.bracket_r = self.register_child(self.bracket_r)
 
+        if not self.spacer:
+            return ([
+                self.bracket_l,
+                self._inner,
+                self.bracket_r
+            ])
+
         return ([
-            self.spacer,
+            self._spacer,
             self.bracket_l,
             self._inner,
             self.bracket_r
