@@ -1940,11 +1940,12 @@ class DynamicMobject(VMobject):
         self,
         id: UUID | None = None, 
         construct_graph: bool = True,
+        scale_factor = 1,
         **kwargs
     ):
         self.shift_flag = False
         self.scale_flag = False
-        self.scale_factor = 1
+        self.scale_factor = scale_factor
         self.position_factor = VMobject().get_center()
 
         self._save_x: float | None = None
@@ -2104,12 +2105,16 @@ class DynamicMobject(VMobject):
         self.identity._replace_mobject = m[current.id]
         self.identity._replace_mobject_replacement = next
 
-    def interchange(self, next: DynamicMobject | Callable[[], DynamicMobject]):
+    def interchange(self, next: DynamicMobject | Callable[[], DynamicMobject]) -> DynamicMobject:
 
         if isinstance(next, DynamicMobject):
             self.parent.replace(self, next)
         else:
-            self.parent.replace(self, next())
+            parent = self.parent
+            next = next()
+            parent.replace(self, next)
+
+        return next
 
     def clear_tracking(self) -> Self:
         for mobject in self.get_dynamic_family():
@@ -2118,22 +2123,82 @@ class DynamicMobject(VMobject):
         
             mobject.identity.tracked_graphs = []
         return self
+    def merge(self, other: DynamicMobject):
 
-    def merge_structure(self, other: DynamicMobject):
+        def extract_direct_dynamic_mobjects(dm, arr):
+            for subm in dm.submobjects:
+
+                is_dm = isinstance(subm, DynamicMobject)
+                is_mt = hasattr(subm, "math_tex_flag")
+
+                if is_dm and not is_mt:
+                    arr.append(subm)
+                else:
+                    extract_direct_dynamic_mobjects(subm, arr)
+            return arr
 
         def recursive_extract(dm1, dm2):
+            dm2.target_id = dm1.id
+
+            direct1 = extract_direct_dynamic_mobjects(dm1, [])
+            direct2 = extract_direct_dynamic_mobjects(dm2, [])
+
+            print("-")
+            print(f"comparison on {dm1.__class__.__name__} vs {dm2.__class__.__name__}, with id {dm1.id} vs {dm2.id}")
+            print("direct1 ", [ (x, hasattr(x, "math_tex_flag")) for x in direct1 ])
+            print("direct2 ", [ (x, hasattr(x, "math_tex_flag")) for x in direct2 ])
             
-            if isinstance(dm1, DynamicMobject):
-                dm2.target_id = dm1.id
+            print([ f"{x.id}-vs-{y.id}" for (x, y) in zip(direct1, direct2) ])
+            print("-")
 
-            if len(dm1.submobjects) != len(dm2.submobjects):
-                raise Exception("merge_structure requires both mobjects to have same tree-structure")
+            if len(direct1) != len(direct2):
+                raise Exception(" requires both mobjects to have same tree-structure")
 
-            for s1, s2 in zip(dm1.submobjects, dm2.submobjects):
+            for s1, s2 in zip(direct1, direct2):
                 recursive_extract(s1, s2)
 
         recursive_extract(self, other)
+    """
+    def merge_structure(self, other: DynamicMobject):
 
+        def extract_direct_dynamic_mobjects(dm, arr):
+            for subm in dm.submobjects:
+                if isinstance(subm, DynamicMobject) and not hasattr(dm, "math_tex_flag"):
+                    arr.append(subm)                                ^
+                else:
+                    extract_direct_dynamic_mobjects(subm, arr)
+            return arr
+
+        def recursive_extract(dm1, dm2):
+            dm2.target_id = dm1.id
+
+            direct1 = extract_direct_dynamic_mobjects(dm1, [])
+            direct2 = extract_direct_dynamic_mobjects(dm2, [])
+
+            print("-")
+            print(f"comparison on {dm1.__class__.__name__} vs {dm2.__class__.__name__}, with id {dm1.id} vs {dm2.id}")
+            print([ f"{x.id}-vs-{y.id}" for (x, y) in zip(direct1, direct2) ])
+            print("-")
+
+            if len(direct1) != len(direct2):
+                raise Exception("merge_structure requires both mobjects to have same tree-structure")
+
+            for s1, s2 in zip(direct1, direct2):
+                recursive_extract(s1, s2)
+
+        #def recursive_extract(dm1, dm2):
+        #    
+        #    if isinstance(dm1, DynamicMobject):
+        #        dm2.target_id = dm1.id
+        #
+        #    if len(dm1.submobjects) != len(dm2.submobjects):
+        #        raise Exception("merge_structure requires both mobjects to have same tree-structure")
+        #
+        #    for s1, s2 in zip(dm1.submobjects, dm2.submobjects):
+        #        recursive_extract(s1, s2)
+
+        recursive_extract(self, other)
+    """
     def pop(self):
         self.parent.remove(self)
         return self

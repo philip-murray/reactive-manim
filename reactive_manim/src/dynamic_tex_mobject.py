@@ -27,12 +27,26 @@ class MathEncodable(DynamicMobject):
 
     def __init__(
         self,
+        color = None,
+        font_size = None,
         *args,
         **kwargs
     ):
         self.in_compose = False
         self._tex_string = None
-        super().__init__(*args, **kwargs)
+
+        self.math_encodable_init = True
+        self.math_encodable_init_color = color
+        
+        if font_size is not None:
+            scale_factor = font_size / 48
+        else:
+            scale_factor = 1
+
+        super().__init__(scale_factor=scale_factor, *args, **kwargs)
+        if color is not None:
+            self.set_color(self.math_encodable_init_color)
+        self.math_encodable_init = False
 
     def execute_compose(self):
         
@@ -76,7 +90,11 @@ class MathEncodable(DynamicMobject):
         pass
     
     def render_tex_string(self, tex_string: str) -> SingleStringMathTex:
-        return SingleStringMathTex(tex_string)
+
+        if self.math_encodable_init and self.math_encodable_init_color is not None and False:
+            return SingleStringMathTex(tex_string, color=self.math_encodable_init_color)
+        else:
+            return SingleStringMathTex(tex_string)
 
     def __str__(self) -> str:
         if self.tex_string is None:
@@ -210,6 +228,7 @@ class MathTex(MathComponent):
         **kwargs
     ):
         self._terms = self.adapt_terms(terms)
+        self.math_tex_flag = True
         super().__init__(**kwargs)
 
     def compose_tex_string(self):
@@ -651,14 +670,16 @@ class Parentheses(MathComponent):
     def __init__(
         self,
         inner,
-        spacer = False
+        spacer = False,
+        *args,
+        **kwargs
     ):
         self._inner = self.adapt_input(inner)
         self._spacer = MathString("\mspace{-3mu}")
         self.bracket_l = BracketMathStringFragment(r"\left(")
         self.bracket_r = BracketMathStringFragment(r"\right)")
         self.spacer = spacer
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
     def compose_tex_string(self):
 
