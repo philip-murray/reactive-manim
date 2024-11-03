@@ -245,8 +245,13 @@ class GraphProgressManager():
                 mobject.reactive_lock = True
                 mobject.source_id = None
                 mobject.target_id = None
+                mobject.identity.from_mobject = None
                 mobject.reactive_lock = False
-
+        else:
+            for mobject in self.graph.dynamic_mobjects:
+                mobject.reactive_lock = True
+                mobject.identity.from_mobject = None
+                mobject.reactive_lock = False
 
         self.source_graph = self.graph.copy()
         self.target_graph = None
@@ -2183,7 +2188,7 @@ class DynamicMobject(VMobject):
         self.identity._replace_mobject = m[current.id]
         self.identity._replace_mobject_replacement = next
 
-    def interchange(self, next: DynamicMobject | Callable[[], DynamicMobject]) -> DynamicMobject:
+    def swap(self, next: DynamicMobject | Callable[[], DynamicMobject]) -> DynamicMobject:
 
         if isinstance(next, DynamicMobject):
             self.parent.replace(self, next)
@@ -2202,6 +2207,7 @@ class DynamicMobject(VMobject):
             #mobject.identity.tracked_graphs = []
             mobject.identity.clear_tracking()
         return self
+    
     def merge(self, other: DynamicMobject):
 
         def extract_direct_dynamic_mobjects(dm, arr):
