@@ -382,7 +382,7 @@ class AbstractDynamicTransformManager():
 
         Need to change this so that .copy() returns an uncorrupted copy provided by the state-manager
         """
-        self.source_graph_manager.require_default()
+        self.source_graph_manager.require_default(clear_source_target_flags=False)
         
         # begin_transforms() runs on the first partial-transform call, i.e. scene.play(TransformInStages.some_constructor(tex)) in a series of some_constructor-partial-transforms
         # Subsequent partial-transforms will skip to animating the existing transform_containers, that have not yet been animated by previous partial-transforms
@@ -486,7 +486,7 @@ class AbstractDynamicTransformManager():
             self.mobject_recovery.save_recover_point(mobject)
 
 
-    def end_transforms(self):
+    def end_transforms(self, clear_source_target_flags=True):
 
         # REMOVE TRANSFORM CONTAINERS FROM SCENE
         for container in self.transform_containers.values():
@@ -511,7 +511,8 @@ class AbstractDynamicTransformManager():
         # from_copy(tex1, tex2) does not clear the id-linking required for from_copy(tex2, tex3)
 
         #self.scene_manager.create_progress_manager(self.graph).create_progress_point(clear_source_target_flags=clear_source_target_flags)
-        self.graph.manager().save_source_graph(clear_source_target_flags=True)#hasattr(self, "progress_manager"))
+        #self.graph.manager().save_source_graph(clear_source_target_flags=True)#hasattr(self, "progress_manager"))
+        self.graph.manager().save_source_graph(clear_source_target_flags=clear_source_target_flags)
 
 
     def recover_mobject(self, mobject):
@@ -963,6 +964,7 @@ class TransformState(GraphStateInterface):
     ):
         self.manager = manager
         self.transform_manager: Optional[AbstractDynamicTransformManager] = None
+        self.clear_source_target_flags = True
         #self.transform_manager = transform_manager
 
     def begin(self):
@@ -975,10 +977,11 @@ class TransformState(GraphStateInterface):
         #detach_supplemental_ids = self.transform_manager.end_transforms()
         #self.manager.create_progress_manager2()
         #self.manager.progress_manager.save_source_graph(clear_source_target_flags=detach_supplemental_ids)
+        
         if self.transform_manager is not None:
-            self.transform_manager.end_transforms()
+            self.transform_manager.end_transforms(clear_source_target_flags=self.clear_source_target_flags)
         else:
-            self.manager.save_source_graph(clear_source_target_flags=True)
+            self.manager.save_source_graph(clear_source_target_flags=self.clear_source_target_flags)
 
         self.manager.graph.set_auto_disconnect_memory()
 
@@ -1007,7 +1010,8 @@ class TransformState(GraphStateInterface):
             
         return self.transform_manager
     
-    def require_default(self):
+    def require_default(self, clear_source_target_flags=True):
+        self.clear_source_target_flags = clear_source_target_flags
         self.manager.set_state(DefaultState(self.manager))
         
     def scene_add(self, mobject: MobjectIdentity): # pass on partial-transform FadeIn() ?
@@ -1089,7 +1093,7 @@ class DefaultState(GraphStateInterface):
         self.manager.accept_transform_manager(transform_manager)
         return transform_manager
     
-    def require_default(self):
+    def require_default(self, clear_source_target_flags=True):
         return
 
     def scene_add(self, mobject: MobjectIdentity):
@@ -1218,8 +1222,8 @@ class GraphStateManager():
     ):
         return self.state.accept_transform_manager(transform_manager)
             
-    def require_default(self):
-        self.state.require_default()
+    def require_default(self, clear_source_target_flags=True):
+        self.state.require_default(clear_source_target_flags=clear_source_target_flags)
 
     def scene_add(self, mobject: MobjectIdentity):
         self.state.scene_add(mobject)
@@ -1435,7 +1439,7 @@ class DynamicMobjectGraph(Mobject):
                     #if self in [ f() for f in new_mobject.tracked_graphs ]:
                     #    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
                     #    new_mobject.tracked_graphs = [ ]
-                    current_mobject = m[new_mobject].id
+                    current_mobject = m[new_mobject.id]
                     if connected_mobjects(new_mobject, current_mobject):
                         new_mobject.current_dynamic_mobject.source_id = new_mobject.id
 
@@ -1665,22 +1669,13 @@ class GraphEditManager():
             #m1.source_id, m2.source_id = m2.source_id, m1.source_id
             #m1.target_id, m2.target_id = m2.target_id, m1.target_id
 
-            #print("A")
-            #print(type(m1))
-            ##print("B")
-            #print(type(m2))
-            #print("C")
-
             if not isinstance(m1, DynamicMobject):
                 raise Exception()
             if not isinstance(m2, DynamicMobject):
                 raise Exception()
             
             fn = self.create_ref(m2.identity)
-            
-            #print("SAVING CDM ", id(m2), m2)
-            print("SAVING IDENT ", id(m2.identity))
-            m1.identity._tracked_mobjects.append(fn)
+            #m1.identity._tracked_mobjects.append(fn)
             m2.identity.from_mobject = self.create_ref(m1.identity)
 
             m1.reactive_lock = False
@@ -1741,14 +1736,17 @@ class MobjectIdentity():
         self.override_permit_auto_disconnects = False
 
 
-    def tracked_mobjects(self):
-        return [ f() for f in self._tracked_mobjects ]
+    #def tracked_mobjects(self):
+    #    return [ f() for f in self._tracked_mobjects ]
     
     #def store_tracked_mobject(self, mobject: MobjectIdentity):
     #    self._tracked_mobjects.append(lambda: mobject)
 
+    #def clear_tracking(self):
+    #    self._tracked_mobjects = [] 
+
     def clear_tracking(self):
-        self._tracked_mobjects = [] 
+        self.from_mobject = None
 
     @property
     def change_parent_mobject(self):
