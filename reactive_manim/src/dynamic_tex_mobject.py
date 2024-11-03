@@ -728,11 +728,12 @@ class Function(MathComponent):
     def __init__(
         self,
         name,
-        input
+        input,
+        spacer = True
     ):
         self._name = self.adapt_input(name)
         self._input = self.adapt_input(input)
-        self._parentheses = Parentheses(self._input)
+        self._parentheses = Parentheses(self._input, spacer=spacer)
         super().__init__()
 
     def compose_tex_string(self):

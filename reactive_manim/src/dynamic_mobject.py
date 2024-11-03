@@ -278,6 +278,7 @@ class GraphProgressManager():
 
         # switched array from self.graph.dynamic_mobjects (which does not include removers), to mobject_union, after exponent example didn't work as expected
         for mobject in mobject_union: # stack-mobjects
+            """
             if (mobject.target_id is not None) and self.source_graph.contains(mobject.id):
 
                 dynamic_mobject = self.source_graph.find_dynamic_mobject(mobject.id)
@@ -285,6 +286,22 @@ class GraphProgressManager():
                 dynamic_mobject.target_id = mobject.target_id
                 dynamic_mobject.reactive_lock = False
 
+            #if mobject.source_id is not None:
+            """
+            source_dynamic_mobject = self.source_graph.find_dynamic_mobject(mobject.id)
+            target_dynamic_mobject = self.target_graph.find_dynamic_mobject(mobject.id)
+
+            if source_dynamic_mobject is not None:
+                source_dynamic_mobject.reactive_lock=True # Not sure why not using reactive-lock breaks QuadraticScene after Animation 8
+                source_dynamic_mobject.source_id = mobject.source_id
+                source_dynamic_mobject.target_id = mobject.target_id
+                source_dynamic_mobject.reactive_lock=False
+            if target_dynamic_mobject is not None:
+                target_dynamic_mobject.reactive_lock=True
+                target_dynamic_mobject.source_id = mobject.source_id
+                target_dynamic_mobject.target_id = mobject.target_id
+                target_dynamic_mobject.reactive_lock=False
+            
 
 class RecoverMobject():
 
@@ -1398,12 +1415,38 @@ class DynamicMobjectGraph(Mobject):
             for mobject in root_connected_mobjects1:
                 m[mobject.id] = mobject
 
-            def auto_disconnect_check(new_mobject):
+            def find_root(m: MobjectIdentity):
+                from_mobject = m.from_mobject
+                if from_mobject is None:
+                    return m
+                else:
+                    return find_root(from_mobject())
+                
+
+            def connected_mobjects(m1: MobjectIdentity, m2: MobjectIdentity):
+                root1 = find_root(m1)
+                root2 = find_root(m2)
+                return root1 is root2
+
+
+            def auto_disconnect_check(new_mobject: MobjectIdentity):
         
                 if new_mobject.id in m:
-                    if self in [ f() for f in new_mobject.tracked_graphs ]:
+                    #if self in [ f() for f in new_mobject.tracked_graphs ]:
+                    #    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
+                    #    new_mobject.tracked_graphs = [ ]
+                    current_mobject = m[new_mobject].id
+                    if connected_mobjects(new_mobject, current_mobject):
                         new_mobject.current_dynamic_mobject.source_id = new_mobject.id
-                        new_mobject.tracked_graphs = [ ]
+
+                    #if m[new_mobject.id] in new_mobject.tracked_mobjects():
+                    #    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
+                    #    new_mobject._tracked_mobjects = []
+
+                    #elif new_mobject in m[new_mobject.id].tracked_mobjects():
+                    #    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
+                    #    new_mobject._tracked_mobjects = []
+                    
                     new_mobject.current_dynamic_mobject.id = uuid.uuid4()
                 else:
                     progress_manager = self.manager().progress_manager
@@ -1431,8 +1474,8 @@ class DynamicMobjectGraph(Mobject):
         parent.children.add(child)
         child.parent = parent
 
-        for mobject in self.connected_from_root(child):
-            mobject.tracked_graphs.append(lambda: self)
+        #for mobject in self.connected_from_root(child):
+        #    mobject.tracked_graphs.append(lambda: self)
         
 
         
@@ -1542,6 +1585,9 @@ class GraphEditManager():
 
         self.execute_invalidation(self.primary_mobject, propagate=True, permit_auto_disconnects=False)
 
+    def create_ref(self, x):
+        return lambda: x
+
     def process_auto_disconnect(self, packet: AutoDisconnectPacket):
         
         (current_parent, next_parent, child, child_clone) = packet.extract()
@@ -1619,20 +1665,40 @@ class GraphEditManager():
             #m1.source_id, m2.source_id = m2.source_id, m1.source_id
             #m1.target_id, m2.target_id = m2.target_id, m1.target_id
 
+            #print("A")
+            #print(type(m1))
+            ##print("B")
+            #print(type(m2))
+            #print("C")
+
+            if not isinstance(m1, DynamicMobject):
+                raise Exception()
+            if not isinstance(m2, DynamicMobject):
+                raise Exception()
+            
+            fn = self.create_ref(m2.identity)
+            
+            #print("SAVING CDM ", id(m2), m2)
+            print("SAVING IDENT ", id(m2.identity))
+            m1.identity._tracked_mobjects.append(fn)
+            m2.identity.from_mobject = self.create_ref(m1.identity)
+
             m1.reactive_lock = False
             m2.reactive_lock = False
 
         # replace_source_mobject
         for (m1, m2) in pairs:
-            m1 = m1.identity
-            m2 = m2.identity
+            zm1 = m1.identity
+            zm2 = m2.identity
             
             for graph_manager in SceneManager.scene_manager().graph_managers.values():
                 progress_manager = graph_manager.progress_manager
                 if progress_manager is not None:
                     for idm, source_mobject in progress_manager.source_mobjects.items():
-                        if source_mobject is m2:
-                            progress_manager.source_mobjects[idm] = m1
+                        if source_mobject is zm2:
+                            progress_manager.source_mobjects[idm] = zm1
+
+        
         
 
 
@@ -1652,13 +1718,17 @@ class MobjectIdentity():
         self.children: Set[MobjectIdentity] = set()
 
         self.tracked_graphs = []
+        self._tracked_mobjects = []
+
+        self.from_mobject: Callable[[], MobjectIdentity] | None = None
         
         if construct_graph:
             #self.mobject_graph: DynamicMobjectGraph | None = None
             #self.mobject_graph = DynamicMobjectGraph()
             mobject_graph = DynamicMobjectGraph()
             mobject_graph.root_mobjects = { self }
-            self.tracked_graphs.append(lambda: mobject_graph)
+            #self.tracked_graphs.append(lambda: mobject_graph)
+
             #self.mobject_graph.root_mobjects = { self }
 
         self.current: DynamicMobject | None = mobject
@@ -1669,6 +1739,16 @@ class MobjectIdentity():
         self._replace_mobject: DynamicMobject | None = None
         self._replace_mobject_replacement: DynamicMobject | None = None 
         self.override_permit_auto_disconnects = False
+
+
+    def tracked_mobjects(self):
+        return [ f() for f in self._tracked_mobjects ]
+    
+    #def store_tracked_mobject(self, mobject: MobjectIdentity):
+    #    self._tracked_mobjects.append(lambda: mobject)
+
+    def clear_tracking(self):
+        self._tracked_mobjects = [] 
 
     @property
     def change_parent_mobject(self):
@@ -2121,7 +2201,8 @@ class DynamicMobject(VMobject):
             mobject.source_id = None
             mobject.target_id = None
         
-            mobject.identity.tracked_graphs = []
+            #mobject.identity.tracked_graphs = []
+            mobject.identity.clear_tracking()
         return self
     def merge(self, other: DynamicMobject):
 
@@ -2143,13 +2224,13 @@ class DynamicMobject(VMobject):
             direct1 = extract_direct_dynamic_mobjects(dm1, [])
             direct2 = extract_direct_dynamic_mobjects(dm2, [])
 
-            print("-")
-            print(f"comparison on {dm1.__class__.__name__} vs {dm2.__class__.__name__}, with id {dm1.id} vs {dm2.id}")
-            print("direct1 ", [ (x, hasattr(x, "math_tex_flag")) for x in direct1 ])
-            print("direct2 ", [ (x, hasattr(x, "math_tex_flag")) for x in direct2 ])
+            #print("-")
+            #print(f"comparison on {dm1.__class__.__name__} vs {dm2.__class__.__name__}, with id {dm1.id} vs {dm2.id}")
+            #print("direct1 ", [ (x, hasattr(x, "math_tex_flag")) for x in direct1 ])
+            #print("direct2 ", [ (x, hasattr(x, "math_tex_flag")) for x in direct2 ])
             
-            print([ f"{x.id}-vs-{y.id}" for (x, y) in zip(direct1, direct2) ])
-            print("-")
+            #print([ f"{x.id}-vs-{y.id}" for (x, y) in zip(direct1, direct2) ])
+            #print("-")
 
             if len(direct1) != len(direct2):
                 raise Exception(" requires both mobjects to have same tree-structure")
