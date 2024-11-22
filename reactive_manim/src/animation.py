@@ -196,14 +196,23 @@ class AbstractDynamicTransform(Animation):
 
         transform_manager = graph_manager.accept_transform_manager(
             ProgressTransformManager(progress_manager).set_abstract_dynamic_transform(cls) # discarded on subsequent partial-transforms
-        ) 
+        )
         
         participants = set()
+
+        for mobject in subgraph.mobjects:
+            participants.add(mobject.id)
         
         for mobject in subgraph.mobjects:
             for descendant in transform_manager.mobject_union.values():
                 if transform_manager.transform_descriptor.is_continuous_ancestor(mobject.id, descendant.id):
-                    participants.add(descendant.id)
+                    if transform_manager.transform_descriptor.is_scene_remover(descendant.id):
+                        participants.add(descendant.id)
+                    else:
+                        #if transform_manager.transform_descriptor.is_target_ancestor(mobject.id, descendant.id):
+                        #    continue
+
+                        continue
 
         animation = cls(transform_manager, participants, param=config, **kwargs)
 

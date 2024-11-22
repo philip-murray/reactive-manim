@@ -9,6 +9,13 @@ from manim import *
 import functools
 
 
+_breakpoint = [False]
+
+def custom_breakpoint(v=True):
+    _breakpoint[0] = v
+
+def use_custom_breakpoint():
+    return _breakpoint[0]
 
 scene_init = Scene.__init__
 
@@ -1169,9 +1176,18 @@ class EditState(GraphStateInterface):
         return
     
     def begin_edit(self, mobject: MobjectIdentity):
+
+        if mobject is None: ###
+            return ###
+        
         self.edit_manager.begin_edit(mobject)
 
     def end_edit(self, mobject: MobjectIdentity):
+
+        if mobject is None: ###
+            self.manager.set_state(DefaultState(self.manager))
+            return ###
+        
         self.edit_manager.end_edit(mobject)
 
         if self.edit_manager.finished():
@@ -1439,6 +1455,9 @@ class DynamicMobjectGraph(Mobject):
 
 
             def auto_disconnect_check(new_mobject: MobjectIdentity):
+
+                #if use_custom_breakpoint() and new_mobject.id == 1:
+                #    print("AT THIS STATE M IS ", id(new_mobject), new_mobject.id in m)
         
                 if new_mobject.id in m:
                     #if self in [ f() for f in new_mobject.tracked_graphs ]:
@@ -1579,7 +1598,19 @@ class GraphEditManager():
         
     def process_primary_mobject(self):
         self.execute_invalidation(self.primary_mobject, propagate=True, permit_auto_disconnects=True) # first invalidation-pass yields auto-disconnects
+
+        
+        #if self.primary_mobject.current_dynamic_mobject.debug:
+        #    print("BEFORE -------------------------------------------------")
+        #    for cdm in [ mobject.current_dynamic_mobject for mobject in self.primary_mobject.children ]:
+        #        print("child structure: ", [ x.id for x in cdm.get_dynamic_family() ])
+
         self.process_auto_disconnects()
+
+        #if self.primary_mobject.current_dynamic_mobject.debug:
+        #    print("AFTER -------------------------------------------------")
+        #    for cdm in [ mobject.current_dynamic_mobject for mobject in self.primary_mobject.children ]:
+        #        print("child structure: ", [ x.id for x in cdm.get_dynamic_family() ])
 
     def queue_auto_disconnect(self, packet: AutoDisconnectPacket):
         self.auto_disconnect_queue.append(packet)
@@ -1589,6 +1620,8 @@ class GraphEditManager():
         for packet in self.auto_disconnect_queue:
             self.process_auto_disconnect(packet) # may yiled same-graph-parent for invalidation 
         
+        # could become same_graph after primary_mobject finishes render
+        # could become not same_graph after primary_mobject finishes render
         for mobject in self.auto_disconnect_same_graph_parents:
             self.execute_invalidation(mobject, propagate=True, permit_auto_disconnects=False)
 
@@ -1608,8 +1641,12 @@ class GraphEditManager():
 
         if current_parent is None or next_parent is None or child is None or child_clone is None:
             raise Exception()
+
+
+        same_graph = False
         
         if current_parent.graph is self.graph:
+            same_graph = True
             clone_dynamic_mobject = child.current_dynamic_mobject.clone()
 
             current_parent.change_parent_mobject = child
@@ -1664,6 +1701,12 @@ class GraphEditManager():
                     pairs.append((m1, m2))
 
         for (m1, m2) in pairs:
+            if same_graph:
+                continue
+                # SAME COMPONENT, CHILD AND NON-CHILD FORM 1
+                # tex.terms = [ m, A(m) ], where we has [ m.clone() defer queued AD, A(m) ]
+                #                                       [ m.clone() (continue)       A(m) ]
+
             m1.reactive_lock = True
             m2.reactive_lock = True
 
@@ -1883,10 +1926,18 @@ class MobjectIdentity():
 
         if mobject.identity in self.next_children or mobject.identity in self.next_from_auto_disconnect:
             return mobject.clone()
-        
+
+        # SAME COMPONENT, CHILD AND NON-CHILD FORM 2 
+        # tex.terms = [ A(m), m ]
+        for identity in self.next_children:
+            if mobject.identity in [ cdm.identity for cdm in identity.current_dynamic_mobject.get_dynamic_family() ]:
+                return mobject.clone()
+            
+        if mobject.identity is self:
+            return mobject.clone()
         
         #if mobject.identity.parent is not None and mobject.identity.parent is self:
-        #    raise Exception("CAN THIS HAPPEN?")
+        #    raise Exception("INVALID STATE")
         # yes, because while every mobject a graph, not every mobject has a parent. 
         
         # mobject has another parent
@@ -1895,6 +1946,8 @@ class MobjectIdentity():
             self.next_from_auto_disconnect.add(mobject.identity)
 
             if not self.permit_auto_disconnects or self.override_permit_auto_disconnects:
+                print(not self.permit_auto_disconnects)
+                print(self.override_permit_auto_disconnects)
                 raise Exception(f"Inval {self.current_dynamic_mobject}-{self.id},  {mobject}-{mobject.id} has parent {mobject.parent}-{mobject.parent.id}")
 
             clone = mobject.clone()
@@ -1935,6 +1988,7 @@ class MobjectIdentity():
             
     @staticmethod
     def add_parent_connection(parent: MobjectIdentity, child: MobjectIdentity):
+        #print(f"adding {child.current_dynamic_mobject.tex_string} and child ids ", [ x.id for x in child.graph.mobjects ]," graph mobjects ", [ x.id for x in parent.graph.mobjects ])
         parent.graph.connect_parent_child(parent, child)
     
     @staticmethod
@@ -2035,6 +2089,8 @@ class DynamicMobject(VMobject):
         self._save_y: float | None = None
         self.arrange_function = None
 
+        self.debug = False
+
         self.reactive_lock = False
         self.super_init = True
         super().__init__(**kwargs)
@@ -2090,7 +2146,7 @@ class DynamicMobject(VMobject):
                     f"{self.__class__.__name__}.compose() returned unsupported type {type(mobject_encoding)}"
                 )
         
-        if not self.scale_during_compose_flag:
+        if not self.scale_during_compose_flag and False: # only need to restore_scale() if compose() returns a new mobject, not updates previous.
             self.restore_scale()
 
         """
@@ -2176,6 +2232,11 @@ class DynamicMobject(VMobject):
     def accept_submobjects(self, *mobject: Mobject):
         self.submobjects = [ *mobject ]
 
+    def disconnect(self):
+        if self.parent is None:
+            return
+        self.parent.replace(self, self.clone())
+
     @reactive
     def replace(self, current: DynamicMobject, next: DynamicMobject):
 
@@ -2184,18 +2245,30 @@ class DynamicMobject(VMobject):
         if current.id not in m:
             raise Exception("In mobject.replace(m1, m2), m1 must be a child of mobject")
         
+        if next.parent is not None:
+            next.disconnect()
 
         self.identity._replace_mobject = m[current.id]
         self.identity._replace_mobject_replacement = next
 
     def swap(self, next: DynamicMobject | Callable[[], DynamicMobject]) -> DynamicMobject:
 
-        if isinstance(next, DynamicMobject):
-            self.parent.replace(self, next)
+        if self.parent is not None:
+
+            if isinstance(next, DynamicMobject):
+                self.parent.replace(self, next)
+            else:
+                parent = self.parent
+                next = next()
+                parent.replace(self, next)
+
         else:
-            parent = self.parent
-            next = next()
-            parent.replace(self, next)
+            next.disconnect()
+            manager = self.manager()
+            manager.begin_edit(None) # after remove_root, self.graph.manager() will not return same manager
+            self.graph.add_root(next.identity)
+            self.graph.remove_root(self.identity)
+            manager.end_edit(None)
 
         return next
 
@@ -2284,6 +2357,13 @@ class DynamicMobject(VMobject):
 
         recursive_extract(self, other)
     """
+
+    def contains(self, mobject: DynamicMobject):
+        for m in self.get_dynamic_family():
+            if m is mobject:
+                return True
+        return False
+
     def pop(self):
         self.parent.remove(self)
         return self
@@ -2428,8 +2508,15 @@ class DynamicMobject(VMobject):
 
     @reactive
     def scale(self, scale_factor: float, **kwargs) -> Self:
+        #print("REACTIVE SCALE ", self.id, scale_factor)
         self.scale_factor *= scale_factor
         super().scale(self.scale_factor, **kwargs)
+        return self
+
+    def set_scale_factor(self, scale_factor: float):
+        fraction = scale_factor / self.scale_factor
+        super().scale(fraction)
+        self.scale_factor = scale_factor
         return self
     
     def register_child(self, mobject: DynamicMobject) -> DynamicMobject:

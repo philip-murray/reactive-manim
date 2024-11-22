@@ -29,9 +29,11 @@ class MathEncodable(DynamicMobject):
         self,
         color = None,
         font_size = None,
+        adapter = False,
         *args,
         **kwargs
     ):
+        self.adapter = adapter
         self.in_compose = False
         self._tex_string = None
 
@@ -59,14 +61,20 @@ class MathEncodable(DynamicMobject):
         else:
             self.tex_string = math_encoding
 
-        if self.parent and isinstance(self.parent, MathEncodable):
+        if self.parent and isinstance(self.parent, MathEncodable):# and not self.parent.adapter:
+            # ManimMatrix uses an MobjectMatrix to position math components, 
+            # The scale of the math components is determined by the ManimMatrix's scaling factor, and not superscript level. 
+            # We do not use component.accept_mobject(...) to inject latex submobjects into the component, since we disregard prior superscript context.
+            # Therefore, we must render as if the component were the root, however, it can still pull render_tex_string() from the root context. 
             pass
         else:
             math_tex = self.render_tex_string(self.tex_string)
+            math_tex.scale(self.scale_factor)
+
             self.accept_mobject_from_rendered_tex_string(math_tex)
 
-        if not isinstance(self.parent, MathEncodable):
-            self.restore_scale()
+            #if not isinstance(self.parent, MathEncodable):
+            #    self.restore_scale()
 
         #if self.parent is None:
         self.move_to(self.identity.mobject_center)
@@ -101,7 +109,33 @@ class MathEncodable(DynamicMobject):
             return f"{self.__class__.__name__}(pre-init)"
         else:
             return f"{self.__class__.__name__}({self.tex_string})"
+    
+    def find_root_encodable(self):
+        parent = self.parent
+        if parent is not None and isinstance(parent, MathEncodable):
+            return parent.find_root_encodable()
+        else:
+            return self
 
+    """ 
+    @abstractmethod
+    def is_equation(self):
+        if isinstance(self, MathTex) and self.equation_guard():
+            return self
+        
+    @abstractmethod
+    def is_expression(self):
+        pass
+        
+    def find_root_expression(self):
+        pass
+
+    def contains_tex(self, tex):
+        pass
+        
+    def sign() -> Optional[MathEncodable]:
+        if self.is_expression():
+    """
 
 class MathComponent(MathEncodable):
 
@@ -311,7 +345,7 @@ class MathString(MathEncodable):
 
     def __init__(self, tex_string: str, **kwargs):
         self.tex_string = tex_string
-        self.store_sm_count =8
+        self.store_sm_count = 8
         
         mobject = SingleStringMathTex(tex_string)
         self.submobject_group = mobject
@@ -328,7 +362,9 @@ class MathString(MathEncodable):
         return self
 
     def accept_mobject_from_rendered_tex_string(self, mobject: VMobject) -> int:
-
+        
+        #if self.tex_string != "" and len(mobject) == 0:
+        #    raise Exception("zero on ", self.tex_string)
 
 
         submobject_count = len(SingleStringMathTex(self.tex_string))
@@ -649,7 +685,7 @@ class Term(MathComponent):
     def superscript(self, superscript: Any):
         self._superscript = self.adapt_input(superscript)
         
-
+    
     @reactive
     def remove(self, mobject):
 
@@ -670,7 +706,7 @@ class Parentheses(MathComponent):
     def __init__(
         self,
         inner,
-        spacer = False,
+        spacer = True,
         *args,
         **kwargs
     ):
@@ -701,7 +737,7 @@ class Parentheses(MathComponent):
             self._inner,
             self.bracket_r
         ])
-    
+
     @property
     def inner(self):
         return self._inner
@@ -710,7 +746,25 @@ class Parentheses(MathComponent):
     @reactive
     def inner(self, inner: Any):
         self._inner = self.adapt_input(inner)
-    
+
+    # inner alias
+    @property
+    def input(self):
+        return self._inner
+
+    @input.setter
+    def input(self, input: Any):
+        self._input = self.adapt_input(input)
+    #
+
+    @property
+    def parentheses(self):
+        return VGroup(self.bracket_l, self.bracket_r)
+
+    @property
+    def paren(self):
+        return VGroup(self.bracket_l, self.bracket_r)
+
     def __len__(self) -> int:
         return len(self._inner)
 
@@ -732,14 +786,13 @@ class Function(MathComponent):
         spacer = True
     ):
         self._name = self.adapt_input(name)
-        self._input = self.adapt_input(input)
-        self._parentheses = Parentheses(self._input, spacer=spacer)
+        self._parentheses = Parentheses(input, spacer=spacer)
         super().__init__()
 
     def compose_tex_string(self):
+
         self._name = self.register_child(self._name)
         self._parentheses = self.register_child(self._parentheses)
-        self._input = self._parentheses._inner
 
         return ([
             self._name,
@@ -748,17 +801,16 @@ class Function(MathComponent):
     
     @property
     def parentheses(self):
-        return self._parentheses
+        return self._parentheses.parentheses
 
     @property
     def input(self):
-        return self._input
+        return self._parentheses.inner
     
     @input.setter
-    @reactive
     def input(self, input: Any):
-        self._input = self.adapt_input(input)
-        
+        self._parentheses.inner = self.adapt_input(input)
+    
 
     @property
     def function_name(self):
@@ -768,6 +820,16 @@ class Function(MathComponent):
     @reactive
     def function_name(self, name):
         self._name = self.adapt_input(name)
+
+    # function_name alias
+    @property
+    def function(self):
+        return self._name
+
+    @function.setter
+    @reactive
+    def function(self, name):
+        self._name = self.adapt_input(name)
         
 
 
@@ -776,10 +838,16 @@ class Fraction(MathComponent):
     def __init__(
         self,
         numerator,
-        denominator
+        denominator,
+        vinculum = None
     ):
         self._numerator = self.adapt_input(numerator)
-        self._vinculum = MathStringFragment("", submobject_count=1)
+
+        if vinculum is None:
+            self._vinculum = MathStringFragment("", submobject_count=1)
+        else: 
+            self._vinculum = vinculum
+
         self._denominator = self.adapt_input(denominator)
         super().__init__()
 
@@ -804,6 +872,11 @@ class Fraction(MathComponent):
     @property
     def vinculum(self):
         return self._vinculum
+    
+    @vinculum.setter
+    @reactive
+    def vinculum(self, vinculum):
+        self._vinculum = vinculum
     
     @property
     def denominator(self):
@@ -901,6 +974,64 @@ class BracketMathStringFragment(MathStringFragment):
 
         return submobject_count
 
+def bracket_length(mobject: VMobject):
+
+        if len(mobject.submobjects) == 1:
+            return 1
+        
+        bracket_submobjects = []
+        
+        for submobject1, submobject2 in pairwise(mobject.submobjects):
+            bracket_submobjects.append(submobject1)
+
+            bottom_points = []
+            top_points = []
+
+            for point in submobject1[0].points:
+                if math.isclose(point[1], submobject1.get_bottom()[1]):
+                    bottom_points.append(point)
+
+            for point in submobject2[0].points:
+                if math.isclose(point[1], submobject2.get_top()[1]):
+                    top_points.append(point)
+
+            min_bx = min(bottom_points, key=lambda point: point[0])[0]
+            max_bx = max(bottom_points, key=lambda point: point[0])[0]
+            min_tx = min(top_points, key=lambda point: point[0])[0]
+            max_tx = max(top_points, key=lambda point: point[0])[0]
+
+            def overlap(interval1, interval2):
+                a1, a2 = interval1
+                b1, b2 = interval2
+
+                overlap_start = max(a1, b1)
+                overlap_end = min(a2, b2)
+
+                overlap_length = max(0, overlap_end - overlap_start)
+
+                total_length = max(a2, b2) - min(a1, b1)
+
+                if total_length == 0:
+                    return 0.0 
+                percentage_overlap = (overlap_length / total_length)
+
+                return percentage_overlap
+
+            ov = overlap([min_bx, max_bx], [min_tx, max_tx])
+            if ov < 0.99:
+                break
+
+            dist_y = submobject2.get_top()[1] - submobject1.get_bottom()[1]
+            dist_x = max_bx - min_bx 
+            
+            if dist_y < 0:
+                if -dist_y/dist_x > 0.15:
+                    break
+
+            if submobject2 is mobject.submobjects[-1]:
+                bracket_submobjects.append(submobject2)
+
+        return len(bracket_submobjects)
 
 class MathCases(MathComponent):
 
@@ -1077,6 +1208,10 @@ class MathMatrix(MathComponent):
         ])
 
     @property
+    def brackets(self):
+        return VGroup(self.bracket_l, self.bracket_r)
+
+    @property
     def matrix(self):
         return self._matrix.tolist()
     
@@ -1085,7 +1220,6 @@ class MathMatrix(MathComponent):
         self._matrix = NumpyMobjectArray.from_mobjects(
             map_2d(matrix, lambda elem: self.adapt_input(elem))
         )
-        
 
     def __len__(self) -> int:
         return len(self._matrix.tolist())
@@ -1097,15 +1231,104 @@ class MathMatrix(MathComponent):
         return iter(self._matrix.tolist())
     
 
+class ManimMatrix(MathComponent):
+
+    def __init__(
+        self,
+        matrix: List[List[Any]],
+    ):
+        #self.a = matrix[0][0]
+        #self.b = matrix[0][1]
+        self.first = True
+        self.bracket_l = MathStringFragment("", submobject_count=1)
+        self.bracket_r = MathStringFragment("", submobject_count=1)
+
+        self._matrix = NumpyMobjectArray.from_mobjects(
+            map_2d(matrix, lambda elem: self.adapt_input(elem))
+        )
+        super().__init__()
+
+    def compose_tex_string(self):
+
+        if not self._matrix.is_2d():
+            raise Exception()
+
+        self.bracket_l = self.register_child(self.bracket_l)   
+        self._matrix = NumpyMobjectArray.from_mobjects(
+            map_2d(self._matrix.tolist(), lambda elem: self.register_child(elem) )
+        )
+        #self.a = self.register_child(self.a)
+        #self.b = self.register_child(self.b)
+        self.bracket_r = self.register_child(self.bracket_r)
+
+
+        #self.mobject_matrix = MobjectMatrix([[ SingleStringMathTex("a") ]]) #MobjectMatrix(self._matrix.tolist())
+        #self.child_components = [ self.bracket_l, self.a, self.b, self.bracket_r ] #[ self.bracket_l, *self._matrix.flatten().tolist(), self.bracket_r ]
+        self.child_components = [ self.bracket_l, *self._matrix.flatten().tolist(), self.bracket_r ]
+        return "x"
+        
+
+    def accept_mobject_from_rendered_tex_string(self, mobject: VMobject) -> int:
+        
+        if self.first == False:
+            for mobject in self._matrix.flatten().tolist():
+                mobject.reactive_lock = True
+                mobject.scale(1/self.scale_factor)
+                mobject.reactive_lock = False
+
+        
+
+        self.mobject_matrix = MobjectMatrix(self._matrix.tolist())
+        self.mobject_matrix.scale(self.scale_factor)
+
+        if self.first == True:
+            self.copy_mobject_matrix = self.mobject_matrix.copy()
+
+
+        self.first = False
+
+        self.bracket_l.accept_mobject_from_rendered_tex_string(self.mobject_matrix[1])
+        self.bracket_r.accept_mobject_from_rendered_tex_string(self.mobject_matrix[2])
+
+        #self.submobjects = [ self.bracket_l, self.a, self.b, self.bracket_r ]
+        self.submobjects = [ self.bracket_l, *self._matrix.flatten().tolist(), self.bracket_r ]
+        
+
+        #root_math = self.find_root_encodable()
+        #if root_math is not self:
+        #    self.scale(1 / root_math.scale_factor)
+        #    self.scale(self.scale_factor)
+
+        """
+        if submobject_count == 0:
+            self.submobjects = []
+        else:
+            group = mobject[:submobject_count]
+
+            if not self.first_render:
+                group.match_style(self)
+            else:
+                self.first_render = False
+        
+            self.submobjects = [ *group ]
+        """
+        return 1
+
 class Root(MathComponent):
 
     def __init__(
         self,
         radicand,
-        index = None
+        index = None, 
+        symbol = None
     ):
         self._radicand = self.adapt_input(radicand)
-        self._radical_symbol = MathStringFragment("", submobject_count=2)
+
+        if symbol is None:
+            self._radical_symbol = MathStringFragment("", submobject_count=2)
+        else:
+            self._radical_symbol = symbol
+        
         self._index = self.adapt_input(index)
         super().__init__(permit_none_children=True)
 
@@ -1145,3 +1368,167 @@ class Root(MathComponent):
     @property
     def radical_symbol(self):
         return self._radical_symbol
+    
+    @property
+    def symbol(self):
+        return self._radical_symbol
+    
+    @symbol.setter
+    def symbol(self, symbol):
+        self._radical_symbol = symbol
+    
+
+
+Paren = Parentheses
+
+
+
+class Int(MathComponent):
+
+    def __init__(
+        self,
+        a = None,
+        b = None,
+    ):
+        self._a = self.adapt_input(a)
+        self._b = self.adapt_input(b)
+        self._symbol = MathStringFragment("", submobject_count=1)
+        super().__init__(permit_none_children=True)
+
+    def compose_tex_string(self):
+
+        self._a = self.register_child(self._a)
+        self._b = self.register_child(self._b)
+        self._symbol = self.register_child(self._symbol)
+
+        if self._a is not None and self._b is not None:
+            self.child_components = [ self._symbol, self._b, self._a ]
+            return f"\int_{{{self._a.get_tex_string()}}}^{{{self._b.get_tex_string()}}}"
+        
+        if self._a is not None:
+            self.child_components = [ self._symbol, self._a ]
+            return f"\int_{{{self._a.get_tex_string()}}}"
+        
+        if self._b is not None:
+            self.child_components = [ self._symbol, self._b ]
+            return f"\int^{{{self._b.get_tex_string()}}}"
+
+        if self._a is None and self._b is None:
+            self.child_components = [ self._symbol ]
+            return "\int "
+        
+    @property
+    def symbol(self):
+        return self._symbol
+    
+    @property
+    def a(self):
+        return self._a
+    
+    @a.setter
+    @reactive
+    def a(self, a):
+        self._a = self.adapt_input(a)
+
+    @property
+    def b(self):
+        return self._b
+    
+    @b.setter
+    @reactive
+    def b(self, b):
+        self._b = self.adapt_input(b)
+
+class Integral(MathComponent):
+
+    def __init__(
+        self,
+        function,
+        a = None,
+        b = None
+    ):
+        self._function = self.adapt_input(function)
+        self._int = Int(a, b)
+        super().__init__()
+
+    def compose_tex_string(self):
+        
+        self._function = self.register_child(self._function)
+        self._int = self.register_child(self._int)
+
+        return [ self._int, self._function ]
+    
+    @property
+    def symbol(self):
+        return self._int.symbol
+
+    @property
+    def a(self):
+        return self._int.a
+    
+    @a.setter
+    def a(self, a):
+        self._int.a = a
+
+    @property
+    def b(self):
+        return self._int.b
+    
+    @b.setter
+    def b(self, b):
+        self._int.b = b
+
+    @property
+    def function(self):
+        return self._function
+    
+    @function.setter
+    def function(self, function):
+        self._function = self.adapt_input(function)
+
+class Evaluate(MathComponent):
+    
+    def __init__(
+        self,
+        function,
+        a = None,
+        b = None
+    ):
+        self._function = self.adapt_input(function)
+        self._bracket = BracketMathStringFragment("")
+        self._a = self.adapt_input(a)
+        self._b = self.adapt_input(b)
+        super().__init__()
+
+    def compose_tex_string(self):
+        
+        self._function = self.register_child(self._function)
+        self._a = self.register_child(self._a)
+        self._b = self.register_child(self._b)
+
+        self.child_components = [ self._function, self._bracket, self._b, self._a ]
+        return f"\\left. {{{self._function.get_tex_string()}}} \\right|_{{{self._a.get_tex_string()}}}^{{{self._b.get_tex_string()}}}"
+    
+    @property
+    def symbol(self):
+        return self._bracket
+
+    @property
+    def a(self):
+        return self._a
+    
+    @a.setter
+    @reactive
+    def a(self, a):
+        self._a = self.adapt_input(a)
+
+    @property
+    def b(self):
+        return self._b
+    
+    @b.setter
+    @reactive
+    def b(self, b):
+        self._b = self.adapt_input(b)
+        
+        
