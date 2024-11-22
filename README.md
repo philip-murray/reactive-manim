@@ -3,7 +3,7 @@
 ![loading](content/cropped_sigmoid.png)
 
 ![loading](https://img.shields.io/badge/license-MIT-green)
-![loading](https://img.shields.io/badge/release-v0.0.2-blue)
+![loading](https://img.shields.io/badge/release-v0.0.3-blue)
 
 Easily create and animate math expressions in manim. Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
