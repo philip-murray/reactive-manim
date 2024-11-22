@@ -13,11 +13,6 @@ author = 'Philip Murray'
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = [
-    'sphinx_toolbox.sidebar_links',
-    'sphinx_toolbox.github',
-]
-
 github_username = 'philip-murray'
 github_repository = 'reactive-manim'
 
