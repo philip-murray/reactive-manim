@@ -16,6 +16,7 @@ reactive-manim documentation
    :hidden:
 
    tutorial/components
+   tutorial/transform-types
    tutorial/functionality-showcase
    tutorial/mobject-controls
 
