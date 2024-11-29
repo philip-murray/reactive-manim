@@ -8,6 +8,12 @@
 Easily create and animate math expressions in manim. Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
 
+
+
+<p align="center">
+  <a href="https://philip-murray.github.io/reactive-manim">https://philip-murray.github.io/reactive-manim</a>
+</p>
+
 <br></br>
 
 **Reusable Math Components**
