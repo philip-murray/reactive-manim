@@ -9,7 +9,7 @@ from manim import *
 from .dynamic_mobject import DynamicMobject, reactive
 from .numpy_mobject_array import NumpyMobjectArray, map_2d
 
-
+config.tex_template.add_to_preamble("\\let\\originalleft\\left \\let\\originalright\\right \\renewcommand{\\left}{\\mathopen{}\\mathclose\\bgroup\\originalleft} \\renewcommand{\\right}{\\aftergroup\\egroup\\originalright}")
 
 def pairwise(iterable):
     
@@ -211,6 +211,7 @@ class MathComponent(MathEncodable):
             rendered_tex_string_portion = math_tex[curr_index:new_index]
             """
 
+
             term_submobject_count = term.accept_mobject_from_rendered_tex_string(mobject[curr_index:])
             new_index = curr_index + term_submobject_count + len("".join(self.arg_separator.split()))
             rendered_tex_string_portion = mobject[curr_index:new_index]
@@ -268,7 +269,7 @@ class MathTex(MathComponent):
     def compose_tex_string(self):
         self._terms = [ self.register_child(term) for term in self._terms ]
         return self._terms
-    
+
     def adapt_terms(self, terms):
         return [ self.adapt_input(term) for term in terms ]
 
@@ -586,65 +587,88 @@ class Term(MathComponent):
             term, 
             superscript = None, 
             subscript = None,
+            paren: bool = False
         ):
         
-        self.base = self.adapt_input(term)
+        self._term = self.adapt_input(term)
         self._subscript = self.adapt_input(subscript)
         self._superscript = self.adapt_input(superscript)
-
-        self.bracket1 = MathString(r"{")
-        self.bracket2 = MathString(r"}^")
-        self.bracket3 = MathString(r"{")
-        self.bracket4 = MathString(r"}_")
-        self.bracket5 = MathString(r"{")
-        self.bracket6 = MathString(r"}")
+        self._parentheses = paren
 
         super().__init__(permit_none_children=True)
 
     def compose_tex_string(self):
-        
-        self.base = self.register_child(self.base)
-        self._subscript = self.register_child(self._subscript)
-        self._superscript = self.register_child(self._superscript)
 
-        if self._superscript is None and self._subscript is None:
-            return [ self.base ]
-        
-        if self._superscript is None:
-            return ([ 
-                self.bracket1, 
-                self.base, 
-                self.bracket2, 
-                self.bracket3, 
-                self.bracket4, 
-                self.bracket5, 
-                self._subscript, 
-                self.bracket6 
-            ])
+        if self._parentheses == False:
+            self._parentheses = None
 
-        if self._subscript is None:
-            return ([ 
-                self.bracket1, 
-                self.base, 
-                self.bracket2, 
-                self.bracket3, 
-                self._superscript, 
-                self.bracket4, 
-                self.bracket5, 
-                self.bracket6 
-            ])
+        if self._parentheses == True:
+            self._parentheses = ParenSymbol()
+
+        if self._parentheses is None or self._parentheses is False:
+            
+            self._term = self.register_child(self._term)
+            self._subscript = self.register_child(self._subscript)
+            self._superscript = self.register_child(self._superscript)
+            
+            if self._superscript is None and self._subscript is None:
+                self.child_components = [ self._term ]
+                return self._term.get_tex_string()
+
+            if self._superscript is None:
+                self.child_components = [ self._term, self._subscript ]
+                return f"{{{self._term.get_tex_string()}}}_{{{self._subscript.get_tex_string()}}}"
+
+            if self._subscript is None:
+                self.child_components = [ self._term, self._superscript ]
+                return f"{{{self._term.get_tex_string()}}}^{{{self._superscript.get_tex_string()}}}"
+            
+            self.child_components = [ self._term, self._superscript, self._subscript ]
+            return f"{{{self._term.get_tex_string()}}}^{{{self._superscript.get_tex_string()}}}_{{{self._subscript.get_tex_string()}}}"
         
-        return ([ 
-            self.bracket1, 
-            self.base, 
-            self.bracket2, 
-            self.bracket3, 
-            self._superscript, 
-            self.bracket4, 
-            self.bracket5, 
-            self._subscript, 
-            self.bracket6 
-        ])
+        else:
+            
+            if self._subscript is not None:
+                raise Exception("Cannot use subscript alongside parentheses in Term component")
+            
+            self._term = self.register_child(self._term)
+            self._superscript = self.register_child(self._superscript)
+            self._parentheses = self.register_child(self._parentheses)
+            
+            if self._superscript is not None:
+
+                self.child_components = [ self._term, self._superscript, self._parentheses ]
+                return f"{{ \\left({ self._term.get_tex_string() }\\right) }}^{{{self._superscript.get_tex_string()}}}"
+            else:
+
+                self.child_components = [ self._term, self._parentheses ]
+                return f"{{ \\left({ self._term.get_tex_string() }\\right) }}"
+        
+    def accept_mobject_from_rendered_tex_string(self, mobject):
+
+        if self._parentheses is None or self._parentheses is False:
+            return super().accept_mobject_from_rendered_tex_string(mobject)
+
+
+        submobject_count_1 = bracket_length(mobject)
+        bracket_l = mobject[0:submobject_count_1]
+
+        submobject_count_2 = self._term.accept_mobject_from_rendered_tex_string(mobject[submobject_count_1:])
+
+        submobject_count_3 = bracket_length(mobject[submobject_count_1+submobject_count_2:])
+        bracket_r = mobject[submobject_count_1+submobject_count_2:submobject_count_1+submobject_count_2+submobject_count_3]
+
+        self._parentheses.accept_mobject_override(bracket_l, bracket_r)
+
+        submobject_count_4 = 0
+
+        if self._superscript is not None:
+            submobject_count_4 = self._superscript.accept_mobject_from_rendered_tex_string(mobject[submobject_count_1+submobject_count_2+submobject_count_3:])
+            self.submobjects = [ self._term, self._superscript, self._parentheses ]
+        else:
+            self.submobjects = [ self._term, self._parentheses ]
+
+        return submobject_count_1 + submobject_count_2 + submobject_count_3 + submobject_count_4
 
     def align_child(self, term, rendered_tex_string):
 
@@ -658,13 +682,21 @@ class Term(MathComponent):
 
     @property
     def term(self):
-        return self.base
+        return self._term
     
     @term.setter
     @reactive
     def term(self, term: Any):
-        self.base = self.adapt_input(term)
+        self._term = self.adapt_input(term)
         
+    @property
+    def superscript(self):
+        return self._superscript
+    
+    @superscript.setter
+    @reactive
+    def superscript(self, superscript: Any):
+        self._superscript = self.adapt_input(superscript)
     
     @property
     def subscript(self):
@@ -674,23 +706,49 @@ class Term(MathComponent):
     @reactive
     def subscript(self, subscript: Any):
         self._subscript = self.adapt_input(subscript)
-        
     
     @property
-    def superscript(self):
+    def base(self):
+        return self._term
+    
+    @base.setter
+    @reactive
+    def base(self, term: Any):
+        self._term = self.adapt_input(term)
+    
+    @property
+    def exponent(self):
         return self._superscript
     
-    @superscript.setter
+    @exponent.setter
     @reactive
-    def superscript(self, superscript: Any):
-        self._superscript = self.adapt_input(superscript)
+    def exponent(self, exponent: Any):
+        self._superscript = self.adapt_input(exponent)
+
+    @property
+    def paren(self):
+        return self._parentheses
+    
+    @paren.setter
+    @reactive
+    def paren(self, paren):
+        self._parentheses = paren
+
+    @property
+    def parentheses(self):
+        return self._parentheses
+    
+    @parentheses.setter
+    @reactive
+    def parentheses(self, parentheses):
+        self._parentheses = parentheses
         
     
     @reactive
     def remove(self, mobject):
 
         if mobject is self.term:
-            self.term = MathString("")
+            self._term = MathString("")
 
         if mobject is self._superscript:
             self._superscript = None
@@ -701,81 +759,142 @@ class Term(MathComponent):
         
 
 
+class ParenSymbol(MathComponent):
+
+    def __init__(
+        self,
+    ):
+        self.bracket_l = MathStringFragment("", 1)
+        self.bracket_r = MathStringFragment("", 1)
+        super().__init__()
+
+    #def execute_compose(self):
+    #
+    #    if self.parent:
+    #        super().execute_compose()
+
+    def compose_tex_string(self):
+        
+        self.bracket_l = self.register_child(self.bracket_l)
+        self.bracket_r = self.register_child(self.bracket_r)
+        self.child_components = [ self.bracket_l, self.bracket_r ]
+
+        return "()"
+
+    def accept_mobject_override(self, bracket_l, bracket_r):
+
+        self.bracket_l.submobject_count = len(bracket_l.submobjects)
+        self.bracket_r.submobject_count = len(bracket_r.submobjects)
+        self.bracket_l.accept_mobject_from_rendered_tex_string(bracket_l)
+        self.bracket_r.accept_mobject_from_rendered_tex_string(bracket_r)
+
+        self.submobjects = [ self.bracket_l, self.bracket_r ]
+
+    
+
+
 class Parentheses(MathComponent):
 
     def __init__(
         self,
-        inner,
-        spacer = True,
+        interior,
+        paren = None,
         *args,
         **kwargs
     ):
-        self._inner = self.adapt_input(inner)
-        self._spacer = MathString("\mspace{-3mu}")
-        self.bracket_l = BracketMathStringFragment(r"\left(")
-        self.bracket_r = BracketMathStringFragment(r"\right)")
-        self.spacer = spacer
+        self._interior = self.adapt_input(interior)
+
+        if paren is None:
+            paren = ParenSymbol()
+
+        self._parentheses = paren
+
         super().__init__(*args, **kwargs)
 
     def compose_tex_string(self):
+        self._parentheses = self.register_child(self._parentheses)
+        self._interior = self.register_child(self._interior)
 
-        self._inner = self.register_child(self._inner)
-        self._spacer = self.register_child(self._spacer)
-        self.bracket_l = self.register_child(self.bracket_l)
-        self.bracket_r = self.register_child(self.bracket_r)
+        self.child_components = [ self._parentheses, self._interior ]
+        return f"\\left( {self._interior.get_tex_string()} \\right)"
 
-        if not self.spacer:
-            return ([
-                self.bracket_l,
-                self._inner,
-                self.bracket_r
-            ])
+    def accept_mobject_from_rendered_tex_string(self, mobject):
 
-        return ([
-            self._spacer,
-            self.bracket_l,
-            self._inner,
-            self.bracket_r
-        ])
+        submobject_count_1 = bracket_length(mobject)
+        bracket_l = mobject[0:submobject_count_1]
+
+        submobject_count_2 = self._interior.accept_mobject_from_rendered_tex_string(mobject[submobject_count_1:])
+
+        submobject_count_3 = bracket_length(mobject[submobject_count_1+submobject_count_2:])
+        bracket_r = mobject[submobject_count_1+submobject_count_2:submobject_count_1+submobject_count_2+submobject_count_3]
+
+        self._parentheses.accept_mobject_override(bracket_l, bracket_r)
+        self.submobjects = [ self._parentheses, self._interior ]
+
+        return submobject_count_1 + submobject_count_2 + submobject_count_3
+
+    @property
+    def interior(self):
+        return self._interior
+    
+    @interior.setter
+    @reactive
+    def interior(self, interior: Any):
+        self._interior = self.adapt_input(interior)
+
+    @property
+    def paren(self):
+        return self._parentheses
+
+    @property
+    def parentheses(self):
+        return self._parentheses
+
+    @property
+    def symbol(self):
+        return self._parentheses
+
+
+
 
     @property
     def inner(self):
-        return self._inner
+        return self._interior
     
     @inner.setter
     @reactive
     def inner(self, inner: Any):
-        self._inner = self.adapt_input(inner)
+        self._interior = self.adapt_input(inner)
 
     # inner alias
     @property
     def input(self):
-        return self._inner
+        return self._interior
 
     @input.setter
     def input(self, input: Any):
-        self._input = self.adapt_input(input)
+        self._interior = self.adapt_input(input)
     #
 
-    @property
-    def parentheses(self):
-        return VGroup(self.bracket_l, self.bracket_r)
+    #@property
+    #def parentheses(self):
+    #    return VGroup(self.bracket_l, self.bracket_r)
 
-    @property
-    def paren(self):
-        return VGroup(self.bracket_l, self.bracket_r)
+    #@property
+    #def paren(self):
+    #    return VGroup(self.bracket_l, self.bracket_r)
 
     def __len__(self) -> int:
-        return len(self._inner)
+        return len(self._interior)
 
     def __getitem__(self, index: int):
-        return self._inner[index]
+        return self._interior[index]
 
     @reactive
     def __setitem__(self, index: int, term):
-        self._inner[index] = self.adapt_input(term)
+        self._interior[index] = self.adapt_input(term)
         
-        
+
 
 class Function(MathComponent):
 
@@ -783,33 +902,61 @@ class Function(MathComponent):
         self,
         name,
         input,
-        spacer = True
+        paren = None,
     ):
         self._name = self.adapt_input(name)
-        self._parentheses = Parentheses(input, spacer=spacer)
+        self._input = self.adapt_input(input)
+
+        if paren is None:
+            self._parentheses = ParenSymbol()
+        else:
+            self._parentheses = paren
+
         super().__init__()
 
     def compose_tex_string(self):
 
         self._name = self.register_child(self._name)
+        self._input = self.register_child(self._input)
         self._parentheses = self.register_child(self._parentheses)
 
-        return ([
-            self._name,
-            self._parentheses
-        ])
+        self.child_components = [ self._name, self._input, self._parentheses ]
+        return f"{self._name.get_tex_string()} \\left( {self._input.get_tex_string()} \\right)"
+    
+    def accept_mobject_from_rendered_tex_string(self, mobject):
+
+        submobject_count_0 = self._name.accept_mobject_from_rendered_tex_string(mobject)
+        mobject = mobject[submobject_count_0:]
+
+        submobject_count_1 = bracket_length(mobject)
+        bracket_l = mobject[0:submobject_count_1]
+
+        submobject_count_2 = self._input.accept_mobject_from_rendered_tex_string(mobject[submobject_count_1:])
+
+        submobject_count_3 = bracket_length(mobject[submobject_count_1+submobject_count_2:])
+        bracket_r = mobject[submobject_count_1+submobject_count_2:submobject_count_1+submobject_count_2+submobject_count_3]
+
+        self._parentheses.accept_mobject_override(bracket_l, bracket_r)
+        self.submobjects = [ self._name, self._parentheses, self._input ]
+
+        return submobject_count_0 + submobject_count_1 + submobject_count_2 + submobject_count_3
     
     @property
     def parentheses(self):
-        return self._parentheses.parentheses
+        return self._parentheses
+    
+    @property
+    def paren(self):
+        return self._parentheses
+
 
     @property
     def input(self):
-        return self._parentheses.inner
+        return self._input
     
     @input.setter
     def input(self, input: Any):
-        self._parentheses.inner = self.adapt_input(input)
+        self._input = self.adapt_input(input)
     
 
     @property
@@ -1503,9 +1650,10 @@ class Evaluate(MathComponent):
     def compose_tex_string(self):
         
         self._function = self.register_child(self._function)
+        self._bracket = self.register_child(self._bracket)
         self._a = self.register_child(self._a)
         self._b = self.register_child(self._b)
-
+        
         self.child_components = [ self._function, self._bracket, self._b, self._a ]
         return f"\\left. {{{self._function.get_tex_string()}}} \\right|_{{{self._a.get_tex_string()}}}^{{{self._b.get_tex_string()}}}"
     
