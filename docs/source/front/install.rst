@@ -3,7 +3,7 @@ Install
 
 .. note::
 
-   Requires Manim Community v0.18.1, 
+   Requires Manim Community v0.18 or v0.19 
    the OpenGL renderer is not supported.
 
 
