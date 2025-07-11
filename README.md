@@ -15,14 +15,12 @@ Easily create and animate math expressions in manim. Reactive-manim reduces the 
   💻 <strong>Install:</strong> <code>pip install reactive-manim</code>
 </p>
 
-**Automatic Animation**
 <br></br>
 ![loading](content/natural_log_animation.gif)
 
 
 <br></br>
-<br></br>
-<br></br>
+
 
 **Reusable Math Components**
 
@@ -36,8 +34,6 @@ Easily create and animate math expressions in manim. Reactive-manim reduces the 
 <br></br>
 **Automatic Animation**
 
-![loading](content/natural_log_animation.gif)
-<br></br>
 ![loading](content/matrix_animation.gif)
 
 
