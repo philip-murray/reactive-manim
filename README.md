@@ -9,26 +9,21 @@
 
 Easily create and animate math expressions in manim. Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
-<p align="center">
-  docs: <a href="https://philip-murray.github.io/reactive-manim"><strong>https://philip-murray.github.io/reactive-manim</strong></a>
-</p>
 
-```sh
-pip install reactive-manim
-```
+<p align="center">
+  📘 <strong>Docs:</strong> <a href="https://philip-murray.github.io/reactive-manim">https://philip-murray.github.io/reactive-manim</a><br>
+  💻 <strong>Install:</strong> <code>pip install reactive-manim</code>
+</p>
 
 
 <br></br>
 
-
+**Automatic Animation**
 ![loading](content/natural_log_animation.gif)
 
 
 <br></br>
 <br></br>
-
-
-
 <br></br>
 
 **Reusable Math Components**
