@@ -6,14 +6,28 @@
 ![loading](https://img.shields.io/badge/release-v0.0.4-blue)
 [![Join us on Discord](https://img.shields.io/badge/Discord-Join%20Chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/nbZuR4t76M)
 
+
 Easily create and animate math expressions in manim. Reactive-manim reduces the programming overhead of creating animations that animate individual parts of an equation, through the use of reusable math components that are reactive to changes in state.
 
-
-
-
 <p align="center">
-  <a href="https://philip-murray.github.io/reactive-manim"><strong>https://philip-murray.github.io/reactive-manim</strong></a>
+  docs: <a href="https://philip-murray.github.io/reactive-manim"><strong>https://philip-murray.github.io/reactive-manim</strong></a>
 </p>
+
+```sh
+pip install reactive-manim
+```
+
+
+<br></br>
+
+
+![loading](content/natural_log_animation.gif)
+
+
+<br></br>
+<br></br>
+
+
 
 <br></br>
 
