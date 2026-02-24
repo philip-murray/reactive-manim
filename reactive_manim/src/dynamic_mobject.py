@@ -1475,7 +1475,7 @@ class DynamicMobjectGraph(Mobject):
                     #    new_mobject.current_dynamic_mobject.source_id = new_mobject.id
                     #    new_mobject._tracked_mobjects = []
                     
-                    new_mobject.current_dynamic_mobject.id = uuid.uuid4()
+                    new_mobject.current_dynamic_mobject.id = custom_uuid4()
                 else:
                     progress_manager = self.manager().progress_manager
                     if progress_manager is not None:
@@ -1754,7 +1754,7 @@ class MobjectIdentity():
         construct_graph: bool
     ):
         super().__init__()
-        self.id = uuid.uuid4()
+        self.id = custom_uuid4()
         self.source_ids: List[UUID] = []
         self.target_ids: List[UUID] = [] 
         self.parent: MobjectIdentity | None = None
@@ -2476,7 +2476,7 @@ class DynamicMobject(VMobject):
             mobject.reactive_lock = True
             mobject.source_id = mobject.id
             mobject.reactive_lock = False
-            mobject.id = uuid.uuid4()
+            mobject.id = custom_uuid4()
 
         return copy_mobject
 

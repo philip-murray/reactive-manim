@@ -43,7 +43,7 @@ def create_graph_id():
     return graph_counter
 
 # Define the custom function that replaces uuid.uuid4()
-def custom_uuid4x():
+def custom_uuid4():
     global counter
     counter += 1
 
@@ -52,11 +52,11 @@ def custom_uuid4x():
     
     return counter
 
-def custom_uuid4():
+def custom_uuid4y():
     return v4()
 
 # Overwrite uuid.uuid4() with your custom function
-uuid.uuid4 = custom_uuid4x
+#uuid.uuid4 = custom_uuid4x
 
 
 def none(object: Optional[T]):
