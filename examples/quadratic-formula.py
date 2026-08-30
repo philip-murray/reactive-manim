@@ -58,7 +58,7 @@ class QuadraticScene(Scene):
 
         # [ ... = ... ]  -> [ ... + (b/2a)^2 = (b/2a)^2 + ... ]
 
-        term4 = Term(Parentheses(Fraction(b, [2, a]), spacer=False), 2).clear_tracking()
+        term4 = Term(Parentheses(Fraction(b, [2, a])), 2).clear_tracking()
         term5 = term4.clone().clear_tracking()
         
         tex[1].save_y()
@@ -238,7 +238,7 @@ class QuadraticScene(Scene):
         frac_RHS = tex.RHS
 
         tex.LHS = tex.LHS.term.inner
-        tex.RHS = MathTex("\pm", Root(tex.RHS, _2.set_opacity(0)))
+        tex.RHS = MathTex(r"\pm", Root(tex.RHS, _2.set_opacity(0)))
 
         root = tex.RHS[1]
         tex[1].restore_y()
