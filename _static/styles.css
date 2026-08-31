@@ -1,0 +1,8 @@
+.wy-nav-content {
+    max-width: calc(808px + 103.56px) !important; /* Adjust percentage as desired */
+    /*margin-left: 50px !important;*/
+}
+
+.manim-image {
+    margin-bottom: 4px !important;
+}
