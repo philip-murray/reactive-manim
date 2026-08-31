@@ -70,6 +70,13 @@ Note: The stuttering in the animations is a result of using gif files for the RE
 
 <br>
 
+
+
+##### Quadratic Formula (Quad3.py)
+
+![loading](content/Quad3_ManimCE_v0.21.0.gif)
+
+
 ##### Exponent Animation
 
 ![loading](content/exponent_scene.gif)
